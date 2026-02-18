@@ -11,8 +11,6 @@ node_modules
 dist
 dist-ssr
 *.local
-public/Data/talents.json
-public/Exports/**
 
 # Editor directories and files
 .vscode/*
