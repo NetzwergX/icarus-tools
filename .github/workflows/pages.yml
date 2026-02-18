@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/pages.yml'
+      - 'index.html'
       - 'talent-app/**'
   workflow_dispatch:
 
@@ -37,15 +38,22 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build app for /talents/
+      - name: Build app for /<repo>/talents/
         run: npm run build
         env:
-          VITE_BASE_PATH: /talents/
+          VITE_BASE_PATH: /${{ github.event.repository.name }}/talents/
+
+      - name: Stage Pages site structure
+        run: |
+          rm -rf ../site
+          mkdir -p ../site/talents
+          cp -a dist/. ../site/talents/
+          cp ../index.html ../site/index.html
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: talent-app/dist
+          path: site
 
   deploy:
     runs-on: ubuntu-latest
