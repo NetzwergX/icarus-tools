@@ -41,7 +41,7 @@ jobs:
       - name: Build app for /<repo>/talents/
         run: npm run build
         env:
-          VITE_BASE_PATH: /${{ github.event.repository.name }}/talents/
+          VITE_BASE_PATH: talents/
 
       - name: Stage Pages site structure
         run: |
