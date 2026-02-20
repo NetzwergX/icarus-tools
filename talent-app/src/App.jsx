@@ -33,8 +33,8 @@ const CREATURE_BASE_ARCHETYPE_ID = 'Creature_Base'
 const HIDDEN_CREATURE_ARCHETYPE_IDS = new Set([CREATURE_BASE_ARCHETYPE_ID])
 const CREATURE_TAB_GROUPS = [
   { id: 'mount', label: 'Mounts' },
-  { id: 'combatPet', label: 'Combat Pets' },
-  { id: 'regularPet', label: 'Pets' }
+  { id: 'combatPet', label: 'Pets' },
+  { id: 'regularPet', label: 'Livestock' }
 ]
 const ROCKETWERKZ_URL = 'https://rocketwerkz.com/'
 const ICARUS_STEAM_URL = 'https://store.steampowered.com/sale/icarus'
@@ -1290,27 +1290,31 @@ function App() {
     }
   }
 
-  const renderArchetypeChip = (item) => (
-    <button
-      key={item.id}
-      className={item.id === selectedArchetype?.id ? 'chip active' : 'chip'}
-      onClick={() => handleSelectArchetype(item.id)}
-    >
-      <span className="chip-content">
-        {resolveAssetImagePath(item.icon) && (
-          <img
-            src={resolveAssetImagePath(item.icon)}
-            alt=""
-            className="chip-icon"
-            onError={(event) => {
-              event.target.style.display = 'none'
-            }}
-          />
-        )}
-        <span>{resolveLocalizedValue(item.display, localeStrings, item.id)}</span>
-      </span>
-    </button>
-  )
+  const renderArchetypeChip = (item) => {
+    const chipIconPath = isCreatureModel ? null : resolveAssetImagePath(item.icon)
+
+    return (
+      <button
+        key={item.id}
+        className={item.id === selectedArchetype?.id ? 'chip active' : 'chip'}
+        onClick={() => handleSelectArchetype(item.id)}
+      >
+        <span className="chip-content">
+          {chipIconPath && (
+            <img
+              src={chipIconPath}
+              alt=""
+              className="chip-icon"
+              onError={(event) => {
+                event.target.style.display = 'none'
+              }}
+            />
+          )}
+          <span>{resolveLocalizedValue(item.display, localeStrings, item.id)}</span>
+        </span>
+      </button>
+    )
+  }
 
   const handleResetBuild = () => {
     if (!hasSpentPoints) return
@@ -2159,11 +2163,11 @@ function getCreatureArchetypeCategory(archetype, creatureTreeProgressById) {
 
 function formatCreatureCategoryLabel(category) {
   if (category === 'combatPet') {
-    return 'Combat Pet'
+    return 'Pet'
   }
 
   if (category === 'regularPet') {
-    return 'Pet'
+    return 'Livestock'
   }
 
   return 'Mount'
