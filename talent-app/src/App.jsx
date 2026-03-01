@@ -1495,6 +1495,7 @@ function App() {
   }, [])
 
   const projectVersionLabel = data?.projectVersion || '—'
+  const calculatorVersionLabel = import.meta.env.VITE_CALCULATOR_VERSION || '—'
 
   if (!data) {
     return (
@@ -1535,7 +1536,9 @@ function App() {
         </header>
 
         <footer className="app-footer" role="contentinfo">
-          <div className="footer-build-meta">ICARUS Version: {projectVersionLabel}</div>
+          <div className="footer-build-meta">
+            Version: {calculatorVersionLabel} ({projectVersionLabel})
+          </div>
           <button
             type="button"
             className="footer-disclaimer-link"
@@ -2015,7 +2018,8 @@ function App() {
       </div>
 
       <footer className="app-footer" role="contentinfo">
-        <div className="footer-build-meta">ICARUS Version: {projectVersionLabel}</div>
+        <div className="footer-build-meta">Version: {calculatorVersionLabel} ({projectVersionLabel})
+        </div>
         <button
           type="button"
           className="footer-disclaimer-link"
