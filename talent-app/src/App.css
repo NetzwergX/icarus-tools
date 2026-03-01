@@ -494,6 +494,12 @@
   text-align: center;
 }
 
+.footer-build-meta {
+  color: #8f96a5;
+  font-size: 0.68rem;
+  line-height: 1.35;
+}
+
 .footer-disclaimer-link {
   border: 0;
   background: transparent;

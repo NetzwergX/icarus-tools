@@ -106,8 +106,8 @@ async function main() {
     return
   }
 
-  if (!dataJson?.models || !dataJson?.ranks) {
-    console.error('Path preflight failed. talents.json is missing required top-level keys: models/ranks.')
+  if (!dataJson?.models || !dataJson?.ranks || !dataJson?.generatedAt || !dataJson?.projectVersion) {
+    console.error('Path preflight failed. talents.json is missing required top-level keys: generatedAt/projectVersion/models/ranks.')
     process.exitCode = 1
     return
   }

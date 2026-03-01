@@ -22,6 +22,11 @@ const requiredFiles = [
     path.join(exportsRoot, 'Icarus', 'Content', 'Localization', 'Game', 'Game.json'),
     path.join(exportsRoot, 'Content', 'Localization', 'Game', 'Game.json'),
     path.join(exportsRoot, 'Localization', 'Game', 'Game.json')
+  ],
+  [
+    path.join(exportsRoot, 'Icarus', 'Config', 'DefaultGame.ini'),
+    path.join(exportsRoot, 'Config', 'DefaultGame.ini'),
+    path.join(exportsRoot, 'DefaultGame.ini')
   ]
 ]
 const optionalFiles = [

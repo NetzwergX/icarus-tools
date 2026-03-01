@@ -36,6 +36,11 @@ const playerTalentModifierFile = await resolveExistingFile(gameExportDir, [
   "Talents/D_PlayerTalentModifiers.json",
   "D_PlayerTalentModifiers.json"
 ]);
+const defaultGameIniFile = await resolveExistingFile(gameExportDir, [
+  "Icarus/Config/DefaultGame.ini",
+  "Config/DefaultGame.ini",
+  "DefaultGame.ini"
+]);
 const contentSourceDir = await resolveExistingDir(gameExportDir, ["Icarus/Content", "Content"]);
 const localizationSourceDir = await resolveExistingDir(gameExportDir, [
   "Icarus/Content/Localization/Game",
@@ -50,6 +55,7 @@ const treesData = await readJson(treeFile);
 const talentsData = await readJson(talentFile);
 const mountsData = mountsFile ? await readJson(mountsFile) : null;
 const playerTalentModifiersData = await readJson(playerTalentModifierFile);
+const projectVersion = await readProjectVersion(defaultGameIniFile);
 
 if (!mountsFile) {
   console.warn("D_Mounts.json not found. Creature mount icon overrides were skipped.");
@@ -67,6 +73,7 @@ const mountIconOverrideStats = summarizeMountIconOverrides(mountIconOverrides, a
 const output = {
   schemaVersion: 4,
   generatedAt: new Date().toISOString(),
+  projectVersion,
   source: {
     gameExportDir: path.relative(process.cwd(), gameExportDir),
     mountIconOverrides: mountIconOverrideStats
@@ -138,6 +145,39 @@ function parseArgs(argv) {
 async function readJson(filePath) {
   const raw = await fs.readFile(filePath, "utf8");
   return JSON.parse(raw);
+}
+
+async function readProjectVersion(filePath) {
+  const raw = await fs.readFile(filePath, "utf8");
+  const lines = raw.split(/\r?\n/);
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith(";") || trimmed.startsWith("[")) {
+      continue;
+    }
+
+    const separatorIndex = trimmed.indexOf("=");
+    if (separatorIndex < 0) {
+      continue;
+    }
+
+    const key = trimmed.slice(0, separatorIndex).trim();
+    if (key.toLowerCase() !== "projectversion") {
+      continue;
+    }
+
+    let value = trimmed.slice(separatorIndex + 1).trim();
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1).trim();
+    }
+
+    if (value) {
+      return value;
+    }
+  }
+
+  throw new Error(`Could not find non-empty ProjectVersion in ${filePath}`);
 }
 
 async function writeJson(filePath, data) {

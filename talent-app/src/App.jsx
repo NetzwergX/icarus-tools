@@ -1452,6 +1452,8 @@ function App() {
     }
   }, [])
 
+  const projectVersionLabel = data?.projectVersion || '—'
+
   if (!data) {
     return (
       <div className="app">
@@ -1485,6 +1487,7 @@ function App() {
         </header>
 
         <footer className="app-footer" role="contentinfo">
+          <div className="footer-build-meta">ICARUS Version: {projectVersionLabel}</div>
           <button
             type="button"
             className="footer-disclaimer-link"
@@ -1950,6 +1953,7 @@ function App() {
       </div>
 
       <footer className="app-footer" role="contentinfo">
+        <div className="footer-build-meta">ICARUS Version: {projectVersionLabel}</div>
         <button
           type="button"
           className="footer-disclaimer-link"

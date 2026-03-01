@@ -1,6 +1,7 @@
 {
   "schemaVersion": 4,
-  "generatedAt": "2026-03-01T14:29:42.907Z",
+  "generatedAt": "2026-03-01T21:55:43.802Z",
+  "projectVersion": "2.4.1.149477-rel-Homestead",
   "source": {
     "gameExportDir": "../Exports",
     "mountIconOverrides": {
