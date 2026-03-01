@@ -32,13 +32,31 @@ const CREATURE_PET_LEVEL_CAP = 25
 const CREATURE_BASE_ARCHETYPE_ID = 'Creature_Base'
 const HIDDEN_CREATURE_ARCHETYPE_IDS = new Set([CREATURE_BASE_ARCHETYPE_ID])
 const CREATURE_TAB_GROUPS = [
-  { id: 'mount', label: 'Mounts' },
-  { id: 'combatPet', label: 'Pets' },
-  { id: 'regularPet', label: 'Livestock' }
+  {
+    id: 'mount',
+    label: 'Mounts',
+    icon: '/Game/Assets/2DArt/UI/Icons/Icon_Speed.Icon_Speed'
+  },
+  {
+    id: 'combatPet',
+    label: 'Tames',
+    icon: '/Game/Assets/2DArt/UI/Icons/Icon_AggressiveCreature.Icon_AggressiveCreature'
+  },
+  {
+    id: 'regularPet',
+    label: 'Livestock',
+    icon: '/Game/Assets/2DArt/UI/Icons/T_Icon_Homestead.T_Icon_Homestead'
+  }
 ]
 const GITHUB_REPO_URL = 'https://github.com/StationSideNet/icarus-tools'
 const ROCKETWERKZ_URL = 'https://rocketwerkz.com/'
 const ICARUS_STEAM_URL = 'https://store.steampowered.com/sale/icarus'
+const TOP_MENU_ICON_UNREAL_PATHS = {
+  Player: '/Game/Assets/2DArt/UI/Icons/Icon_Solo.Icon_Solo',
+  Creature: '/Game/Assets/2DArt/UI/Icons/T_ICON_Paws.T_ICON_Paws',
+  TechTree: '/Game/Assets/2DArt/UI/Icons/T_Icon_TechTree.T_Icon_TechTree',
+  Workshop: '/Game/Assets/2DArt/UI/Icons/Icon_RenCurrency.Icon_RenCurrency'
+}
 const LOCALE_FLAG_COMPONENTS = {
   'de-DE': DE,
   en: GB,
@@ -61,6 +79,24 @@ function BrandName() {
       <span className="brand-separator brand-separator-right">//</span>
       <span className="brand-word brand-word-talents">TALENTS</span>
     </div>
+  )
+}
+
+function MenuItemLabel({ iconPath, label }) {
+  return (
+    <span className="menu-link-content">
+      {iconPath ? (
+        <img
+          src={iconPath}
+          alt=""
+          className="menu-link-icon"
+          onError={(event) => {
+            event.target.style.display = 'none'
+          }}
+        />
+      ) : null}
+      <span>{label}</span>
+    </span>
   )
 }
 
@@ -101,6 +137,12 @@ function App() {
   const [includeSoloEffects, setIncludeSoloEffects] = useState(true)
   const [selectedPlayerModifierIds, setSelectedPlayerModifierIds] = useState([])
   const [selectedCreatureMetaGroupId, setSelectedCreatureMetaGroupId] = useState('all')
+  const topMenuIcons = useMemo(() => ({
+    Player: resolveAssetImagePath(TOP_MENU_ICON_UNREAL_PATHS.Player) || '',
+    Creature: resolveAssetImagePath(TOP_MENU_ICON_UNREAL_PATHS.Creature) || '',
+    TechTree: resolveAssetImagePath(TOP_MENU_ICON_UNREAL_PATHS.TechTree) || '',
+    Workshop: resolveAssetImagePath(TOP_MENU_ICON_UNREAL_PATHS.Workshop) || ''
+  }), [])
 
   const getHumanErrorMessage = (errorCode) => {
     const messages = {
@@ -1461,9 +1503,15 @@ function App() {
           <div className="top-nav-left">
             <BrandName />
             <nav className="top-menu" aria-label="Model navigation">
-              <button type="button" className="menu-link active">Player</button>
-              <button type="button" className="menu-link" disabled title="Coming sooon…">Tech Tree</button>
-              <button type="button" className="menu-link" disabled title="Coming sooon…">Workshop</button>
+              <button type="button" className="menu-link active">
+                <MenuItemLabel iconPath={topMenuIcons.Player} label="Player" />
+              </button>
+              <button type="button" className="menu-link" disabled title="Coming sooon…">
+                <MenuItemLabel iconPath={topMenuIcons.TechTree} label="Tech Tree" />
+              </button>
+              <button type="button" className="menu-link" disabled title="Coming sooon…">
+                <MenuItemLabel iconPath={topMenuIcons.Workshop} label="Workshop" />
+              </button>
             </nav>
           </div>
 
@@ -1547,11 +1595,18 @@ function App() {
                 className={model.id === modelId ? 'menu-link active' : 'menu-link'}
                 onClick={() => handleSelectModel(model.id)}
               >
-                {resolveLocalizedValue(model.display, localeStrings, model.id)}
+                <MenuItemLabel
+                  iconPath={topMenuIcons[model.id] || ''}
+                  label={resolveLocalizedValue(model.display, localeStrings, model.id)}
+                />
               </button>
             ))}
-            <button type="button" className="menu-link" disabled title="Coming sooon…">Tech Tree</button>
-            <button type="button" className="menu-link" disabled title="Coming sooon…">Workshop</button>
+            <button type="button" className="menu-link" disabled title="Coming sooon…">
+              <MenuItemLabel iconPath={topMenuIcons.TechTree} label="Tech Tree" />
+            </button>
+            <button type="button" className="menu-link" disabled title="Coming sooon…">
+              <MenuItemLabel iconPath={topMenuIcons.Workshop} label="Workshop" />
+            </button>
           </nav>
         </div>
 
@@ -1602,6 +1657,7 @@ function App() {
                   }
 
                   const isActiveGroup = activeCreatureMetaGroupId === group.id
+                  const groupIconPath = resolveAssetImagePath(group.icon)
 
                   return (
                     <button
@@ -1613,6 +1669,16 @@ function App() {
                       aria-selected={isActiveGroup}
                       aria-controls={`creature-group-${group.id}`}
                     >
+                      {groupIconPath ? (
+                        <img
+                          src={groupIconPath}
+                          alt=""
+                          className="meta-chip-icon"
+                          onError={(event) => {
+                            event.target.style.display = 'none'
+                          }}
+                        />
+                      ) : null}
                       <span>{group.label}</span>
                       <ChevronRight className="meta-chip-chevron" aria-hidden="true" />
                     </button>
@@ -1640,10 +1706,6 @@ function App() {
           <div className="summary-inline" role="status" aria-label="Build summary">
               {isCreatureModel ? (
                 <>
-                  <div className="summary-inline-item">
-                    <span className="summary-inline-label">Type</span>
-                    <span className="summary-inline-value">{formatCreatureCategoryLabel(selectedCreatureProgress.category)}</span>
-                  </div>
                   <div className="summary-inline-item">
                     <span className="summary-inline-label">Points</span>
                     <span className="summary-inline-value">{selectedCreatureProgress.points}/{selectedCreatureProgress.levelCap}</span>
@@ -2211,18 +2273,6 @@ function getCreatureArchetypeCategory(archetype, creatureTreeProgressById) {
   const firstTree = Object.values(archetype.trees ?? {})[0]
   const inferredCategory = creatureTreeProgressById?.[firstTree?.id]?.category
   return inferredCategory || 'mount'
-}
-
-function formatCreatureCategoryLabel(category) {
-  if (category === 'combatPet') {
-    return 'Pet'
-  }
-
-  if (category === 'regularPet') {
-    return 'Livestock'
-  }
-
-  return 'Mount'
 }
 
 function getCreatureOriginTalentByTree(model) {

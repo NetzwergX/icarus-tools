@@ -15,6 +15,15 @@ const PLAYER_MODEL = "Player";
 const CREATURE_MODEL = "Creature";
 const CREATURE_BASE_ARCHETYPE = "Creature_Base";
 const CREATURE_BASE_TREE = "Creature_Mount_Base";
+const EXTRA_RUNTIME_ASSET_PATHS = [
+  "/Game/Assets/2DArt/UI/Icons/Icon_Solo.Icon_Solo",
+  "/Game/Assets/2DArt/UI/Icons/T_ICON_Paws.T_ICON_Paws",
+  "/Game/Assets/2DArt/UI/Icons/T_Icon_TechTree.T_Icon_TechTree",
+  "/Game/Assets/2DArt/UI/Icons/Icon_RenCurrency.Icon_RenCurrency",
+  "/Game/Assets/2DArt/UI/Icons/Icon_Speed.Icon_Speed",
+  "/Game/Assets/2DArt/UI/Icons/Icon_AggressiveCreature.Icon_AggressiveCreature",
+  "/Game/Assets/2DArt/UI/Icons/T_Icon_Homestead.T_Icon_Homestead"
+];
 
 const args = process.argv.slice(2);
 const options = parseArgs(args);
@@ -100,7 +109,7 @@ if (!options.skipCopyExports) {
   const copyResult = await copyReferencedAssets({
     sourceContentDir: contentSourceDir,
     targetContentDir: contentTargetDir,
-    unrealPaths: collectRuntimeAssetPaths(output)
+    unrealPaths: [...collectRuntimeAssetPaths(output), ...EXTRA_RUNTIME_ASSET_PATHS]
   });
 
   if (copyResult.missingCritical.length > 0) {

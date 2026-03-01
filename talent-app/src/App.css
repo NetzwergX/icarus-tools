@@ -156,6 +156,19 @@
   transition: all 0.18s ease;
 }
 
+.menu-link-content {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.menu-link-icon {
+  width: 0.95rem;
+  height: 0.95rem;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
 .menu-link:hover {
   border-color: #646b7a;
   color: #eef1f8;
@@ -242,6 +255,13 @@
   border-color: #767f91;
 }
 
+.meta-chip-icon {
+  width: 0.9rem;
+  height: 0.9rem;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
 .meta-chip-chevron {
   width: 14px;
   height: 14px;
@@ -311,6 +331,13 @@
   border-left: 1px solid #574935;
   background: transparent;
   color: #f0d8ad;
+
+.meta-chip-icon {
+  width: 0.9rem;
+  height: 0.9rem;
+  object-fit: contain;
+  flex-shrink: 0;
+}
   border-radius: 0;
   padding: 0.2rem 0.7rem;
   font: inherit;
