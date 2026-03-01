@@ -24,6 +24,9 @@ const requiredFiles = [
     path.join(exportsRoot, 'Localization', 'Game', 'Game.json')
   ]
 ]
+const optionalFiles = [
+  [path.join(exportsRoot, 'AI', 'D_Mounts.json'), path.join(exportsRoot, 'D_Mounts.json')]
+]
 
 function parseArgs(argv) {
   const opts = {}
@@ -48,6 +51,7 @@ async function exists(filePath) {
 
 async function main() {
   const missing = []
+  const missingOptional = []
   for (const candidatePaths of requiredFiles) {
     let found = false
     for (const filePath of candidatePaths) {
@@ -62,11 +66,30 @@ async function main() {
     }
   }
 
+  for (const candidatePaths of optionalFiles) {
+    let found = false
+    for (const filePath of candidatePaths) {
+      if (await exists(filePath)) {
+        found = true
+        break
+      }
+    }
+
+    if (!found) {
+      missingOptional.push(candidatePaths.join(' | '))
+    }
+  }
+
   if (missing.length > 0) {
     console.error('Transform preflight failed. Missing required Exports files:')
     missing.forEach((filePath) => console.error(`- ${filePath}`))
     process.exitCode = 1
     return
+  }
+
+  if (missingOptional.length > 0) {
+    console.warn('Transform preflight warning. Optional inputs not found:')
+    missingOptional.forEach((filePath) => console.warn(`- ${filePath}`))
   }
 
   console.log('Transform preflight passed.')

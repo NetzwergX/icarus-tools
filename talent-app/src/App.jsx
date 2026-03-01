@@ -1294,7 +1294,7 @@ function App() {
   }
 
   const renderArchetypeChip = (item) => {
-    const chipIconPath = isCreatureModel ? null : resolveAssetImagePath(item.icon)
+    const chipIconPath = resolveAssetImagePath(item.icon)
 
     return (
       <button

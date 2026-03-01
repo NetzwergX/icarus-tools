@@ -28,6 +28,10 @@ const modelFile = await resolveExistingFile(gameExportDir, ["Talents/D_TalentMod
 const archetypeFile = await resolveExistingFile(gameExportDir, ["Talents/D_TalentArchetypes.json", "D_TalentArchetypes.json"]);
 const treeFile = await resolveExistingFile(gameExportDir, ["Talents/D_TalentTrees.json", "D_TalentTrees.json"]);
 const talentFile = await resolveExistingFile(gameExportDir, ["Talents/D_Talents.json", "D_Talents.json"]);
+const mountsFile = await resolveOptionalAbsoluteFile([
+  path.join(gameExportDir, "AI", "D_Mounts.json"),
+  path.join(gameExportDir, "D_Mounts.json")
+]);
 const playerTalentModifierFile = await resolveExistingFile(gameExportDir, [
   "Talents/D_PlayerTalentModifiers.json",
   "D_PlayerTalentModifiers.json"
@@ -44,20 +48,28 @@ const modelsData = await readJson(modelFile);
 const archetypesData = await readJson(archetypeFile);
 const treesData = await readJson(treeFile);
 const talentsData = await readJson(talentFile);
+const mountsData = mountsFile ? await readJson(mountsFile) : null;
 const playerTalentModifiersData = await readJson(playerTalentModifierFile);
+
+if (!mountsFile) {
+  console.warn("D_Mounts.json not found. Creature mount icon overrides were skipped.");
+}
 
 const ranks = buildRanks(ranksData);
 const models = buildModels(modelsData);
-const archetypes = buildArchetypes(archetypesData, models);
-const trees = buildTrees(treesData, archetypes);
+const mountIconOverrides = buildMountIconOverrides(mountsData);
+const archetypes = buildArchetypes(archetypesData, models, mountIconOverrides);
+const trees = buildTrees(treesData, archetypes, mountIconOverrides);
 const talents = buildTalents(talentsData, trees);
 const playerTalentModifiers = buildPlayerTalentModifiers(playerTalentModifiersData);
+const mountIconOverrideStats = summarizeMountIconOverrides(mountIconOverrides, archetypes, trees);
 
 const output = {
   schemaVersion: 4,
   generatedAt: new Date().toISOString(),
   source: {
-    gameExportDir: path.relative(process.cwd(), gameExportDir)
+    gameExportDir: path.relative(process.cwd(), gameExportDir),
+    mountIconOverrides: mountIconOverrideStats
   },
   playerTalentModifiers,
   ranks,
@@ -187,7 +199,7 @@ function buildModels(data) {
   return modelMap;
 }
 
-function buildArchetypes(data, models) {
+function buildArchetypes(data, models, mountIconOverrides = {}) {
   const rows = data?.Rows ?? [];
   const archetypeMap = {};
 
@@ -204,7 +216,7 @@ function buildArchetypes(data, models) {
       id,
       modelId,
       display: row.DisplayName ?? id,
-      icon: normalizeNone(row.Icon),
+      icon: mountIconOverrides[id] ?? normalizeNone(row.Icon),
       background: normalizeNone(row.BackgroundTexture),
       requiredLevel: row.RequiredLevel ?? 0,
       trees: {}
@@ -234,7 +246,7 @@ function buildArchetypes(data, models) {
   return archetypeMap;
 }
 
-function buildTrees(data, archetypes) {
+function buildTrees(data, archetypes, mountIconOverrides = {}) {
   const rows = data?.Rows ?? [];
   const treeMap = {};
 
@@ -254,7 +266,7 @@ function buildTrees(data, archetypes) {
       id,
       archetypeId,
       display: row.DisplayName ?? id,
-      icon: normalizeNone(row.Icon),
+      icon: mountIconOverrides[id] ?? normalizeNone(row.Icon),
       background: normalizeNone(row.BackgroundTexture),
       firstRank: row.FirstRank?.RowName ?? null,
       requiredLevel: row.RequiredLevel ?? 0,
@@ -324,6 +336,46 @@ function buildPlayerTalentModifiers(data) {
       };
     })
     .filter(Boolean);
+}
+
+function buildMountIconOverrides(data) {
+  const rows = data?.Rows ?? [];
+  const iconOverrides = {};
+
+  for (const row of rows) {
+    const archetypeId = row?.MountTalentArchetype?.RowName ?? null;
+    const icon = normalizeNone(row?.Icon);
+
+    if (!archetypeId || !icon || iconOverrides[archetypeId]) {
+      continue;
+    }
+
+    iconOverrides[archetypeId] = icon;
+  }
+
+  return iconOverrides;
+}
+
+function summarizeMountIconOverrides(iconOverrides, archetypes, trees) {
+  const overrideIds = Object.keys(iconOverrides);
+  let appliedArchetypeIcons = 0;
+  let appliedTreeIcons = 0;
+
+  for (const id of overrideIds) {
+    if (archetypes[id]?.icon === iconOverrides[id]) {
+      appliedArchetypeIcons += 1;
+    }
+
+    if (trees[id]?.icon === iconOverrides[id]) {
+      appliedTreeIcons += 1;
+    }
+  }
+
+  return {
+    discovered: overrideIds.length,
+    appliedArchetypeIcons,
+    appliedTreeIcons
+  };
 }
 
 function attachArchetypesToModels(models, archetypes) {
@@ -513,6 +565,16 @@ async function resolveExistingFile(baseDir, relativeCandidates) {
   throw new Error(
     `Could not find required input file under ${baseDir}. Tried: ${relativeCandidates.join(", ")}`
   );
+}
+
+async function resolveOptionalAbsoluteFile(candidates) {
+  for (const fullPath of candidates) {
+    if (await pathExists(fullPath)) {
+      return fullPath;
+    }
+  }
+
+  return null;
 }
 
 async function resolveExistingDir(baseDir, relativeCandidates) {

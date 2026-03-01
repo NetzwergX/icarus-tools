@@ -110,7 +110,7 @@ function TalentTreeCanvas({ tree, ranks, modelId, localeStrings, skillInvestment
     ? resolveI18nText(ranks?.[rankInfo.nextRank]?.display, localeStrings, rankInfo.nextRank)
     : null
   const treeTitle = resolveI18nText(tree?.display, localeStrings, tree?.id ?? '')
-  const treeIconSrc = modelId === 'Creature' ? null : resolveAssetImagePath(tree?.icon)
+  const treeIconSrc = resolveAssetImagePath(tree?.icon)
 
   // Check if player has spent enough points to unlock a talent
   const meetsPointRequirement = (talent) => {

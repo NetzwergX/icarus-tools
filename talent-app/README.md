@@ -14,13 +14,14 @@ cd ../talent-transform
 npm run transform -- --game-export /path/to/Exports
 ```
 
-## Transformed contract (minimal v3)
+## Transformed contract (minimal v4)
 
-`public/Data/talents.json` now uses a minimal transform contract (`schemaVersion: 3`):
+`public/Data/talents.json` now uses a minimal transform contract (`schemaVersion: 4`):
 
 - Keeps structural joins (`models -> archetypes -> trees -> talents`) for UI/runtime link stability.
 - Preserves source-like values for text fields (`display`, `description`) as raw strings, including `NSLOCTEXT(...)` strings.
 - Keeps reward effects as raw pairs (`rawKey`, `value`) without synthesized localization key fields.
+- Applies creature archetype/tree icon overrides from `Exports/AI/D_Mounts.json` using `MountTalentArchetype -> Icon`.
 
 The UI derives localization keys and display text at runtime.
 
