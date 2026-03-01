@@ -426,20 +426,29 @@ function App() {
     return map
   }, [selectedModel])
 
+  const isCreatureModel = modelId === 'Creature'
+
+  const creatureTreeProgressById = useMemo(
+    () => getCreatureTreeProgressById(selectedModel),
+    [selectedModel]
+  )
+
+  const creatureOriginTalentByTree = useMemo(
+    () => getCreatureOriginTalentByTree(selectedModel),
+    [selectedModel]
+  )
+
   const getTreePoints = useCallback((treeId) => {
     const treeTalents = skilledTalents[treeId] ?? {}
-    let points = 0
-    Object.values(treeTalents).forEach((rank) => {
-      points += rank
-    })
-    return points
-  }, [skilledTalents])
+    const excludedTalentId = modelId === 'Creature' ? creatureOriginTalentByTree[treeId] : null
+    return getTreeTalentPoints(treeTalents, excludedTalentId)
+  }, [creatureOriginTalentByTree, modelId, skilledTalents])
 
   const getIsSoloTree = (treeId) => treeArchetypeMap[treeId] === 'Solo'
 
   const pointsSummary = useMemo(
-    () => summarizeTalentPoints(skilledTalents, treeArchetypeMap),
-    [skilledTalents, treeArchetypeMap]
+    () => summarizeTalentPoints(skilledTalents, treeArchetypeMap, modelId === 'Creature' ? creatureOriginTalentByTree : null),
+    [creatureOriginTalentByTree, modelId, skilledTalents, treeArchetypeMap]
   )
   const normalizedSelectedPlayerModifierIds = useMemo(
     () => normalizePlayerModifierIds(selectedPlayerModifierIds, data?.playerTalentModifiers),
@@ -451,7 +460,6 @@ function App() {
   )
   const maxPlayerTalentPoints = MAX_TALENT_POINTS + playerBonusTalentPoints
   const hasSpentPoints = pointsSummary.talentPoints > 0 || pointsSummary.soloPoints > 0
-  const isCreatureModel = modelId === 'Creature'
 
   useEffect(() => {
     if (!data?.playerTalentModifiers) return
@@ -459,16 +467,6 @@ function App() {
       return normalizePlayerModifierIds(previousIds, data.playerTalentModifiers)
     })
   }, [data?.playerTalentModifiers])
-
-  const creatureTreeProgressById = useMemo(
-    () => getCreatureTreeProgressById(selectedModel),
-    [selectedModel]
-  )
-
-  const creatureOriginTalentByTree = useMemo(
-    () => getCreatureOriginTalentByTree(selectedModel),
-    [selectedModel]
-  )
 
   const selectedCreatureTree = useMemo(
     () => (isCreatureModel ? trees[0] ?? null : null),
@@ -851,13 +849,17 @@ function App() {
         next[treeId] = cascadeInvalidTalentsInTree(treeId, next[treeId])
       }
 
-      const nextSummary = summarizeTalentPoints(next, treeArchetypeMap)
+      const nextSummary = summarizeTalentPoints(
+        next,
+        treeArchetypeMap,
+        modelId === 'Creature' ? creatureOriginTalentByTree : null
+      )
       const isSoloTree = getIsSoloTree(treeId)
 
       if (modelId === 'Creature') {
         const creatureCap = creatureTreeProgressById[treeId]?.levelCap
         if (Number.isFinite(creatureCap)) {
-          const nextTreePoints = Object.values(next[treeId] ?? {}).reduce((total, rank) => total + rank, 0)
+          const nextTreePoints = getTreeTalentPoints(next[treeId], creatureOriginTalentByTree[treeId])
           if (nextTreePoints > creatureCap) {
             return prev
           }
@@ -1333,7 +1335,11 @@ function App() {
       return
     }
 
-    setSkilledTalents({})
+    setSkilledTalents(
+      modelId === 'Creature'
+        ? ensureCreatureArchetypeBuild({}, selectedModel, selectedArchetype?.id ?? '')
+        : {}
+    )
     setDecodeBuildError('')
     setBuildWarnings([])
     setPendingSharedMetadata(null)
@@ -2109,22 +2115,37 @@ function resolveLocalizedValue(value, localeStrings, fallbackText = '') {
   )
 }
 
-function summarizeTalentPoints(talentState, treeArchetypeMap) {
+function summarizeTalentPoints(talentState, treeArchetypeMap, excludedTalentByTree) {
   let talentPoints = 0
   let soloPoints = 0
 
   Object.entries(talentState ?? {}).forEach(([treeId, talents]) => {
     const isSolo = treeArchetypeMap?.[treeId] === 'Solo'
-    Object.values(talents ?? {}).forEach((rank) => {
-      if (isSolo) {
-        soloPoints += rank
-      } else {
-        talentPoints += rank
-      }
-    })
+    const treePoints = getTreeTalentPoints(talents, excludedTalentByTree?.[treeId])
+
+    if (isSolo) {
+      soloPoints += treePoints
+    } else {
+      talentPoints += treePoints
+    }
   })
 
   return { talentPoints, soloPoints }
+}
+
+function getTreeTalentPoints(treeTalents, excludedTalentId) {
+  return Object.entries(treeTalents ?? {}).reduce((total, [talentId, rankValue]) => {
+    if (excludedTalentId && talentId === excludedTalentId) {
+      return total
+    }
+
+    const rank = Number(rankValue)
+    if (!Number.isFinite(rank)) {
+      return total
+    }
+
+    return total + rank
+  }, 0)
 }
 
 function getCreatureTreeProgressById(model) {
@@ -2235,6 +2256,7 @@ function getCreatureOriginTalentByTree(model) {
 
 function hasCreatureOvercap(talentState, creatureModel) {
   const creatureProgressByTree = getCreatureTreeProgressById(creatureModel)
+  const creatureOriginByTree = getCreatureOriginTalentByTree(creatureModel)
 
   return Object.entries(talentState ?? {}).some(([treeId, treeTalents]) => {
     const cap = creatureProgressByTree[treeId]?.levelCap
@@ -2242,7 +2264,7 @@ function hasCreatureOvercap(talentState, creatureModel) {
       return false
     }
 
-    const points = Object.values(treeTalents ?? {}).reduce((total, rank) => total + rank, 0)
+    const points = getTreeTalentPoints(treeTalents, creatureOriginByTree[treeId])
     return points > cap
   })
 }
