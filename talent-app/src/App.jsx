@@ -136,7 +136,7 @@ function App() {
   const [isEffectsSidebarCollapsed, setIsEffectsSidebarCollapsed] = useState(false)
   const [includeSoloEffects, setIncludeSoloEffects] = useState(true)
   const [selectedPlayerModifierIds, setSelectedPlayerModifierIds] = useState([])
-  const [selectedCreatureMetaGroupId, setSelectedCreatureMetaGroupId] = useState('all')
+  const [selectedCreatureMetaGroupId, setSelectedCreatureMetaGroupId] = useState('mount')
   const topMenuIcons = useMemo(() => ({
     Player: resolveAssetImagePath(TOP_MENU_ICON_UNREAL_PATHS.Player) || '',
     Creature: resolveAssetImagePath(TOP_MENU_ICON_UNREAL_PATHS.Creature) || '',
@@ -415,14 +415,6 @@ function App() {
     return data?.models?.[modelId] ?? null
   }, [data, modelId])
 
-  const creatureBaseArchetype = useMemo(() => {
-    if (selectedModel?.id !== 'Creature') {
-      return null
-    }
-
-    return selectedModel.archetypes?.[CREATURE_BASE_ARCHETYPE_ID] ?? null
-  }, [selectedModel])
-
   const archetypes = useMemo(() => {
     if (!selectedModel?.archetypes) return []
     const allArchetypes = Object.values(selectedModel.archetypes)
@@ -435,12 +427,8 @@ function App() {
   }, [selectedModel])
 
   const selectedArchetype = useMemo(() => {
-    if (selectedModel?.id === 'Creature' && selectedCreatureMetaGroupId === 'all' && creatureBaseArchetype) {
-      return creatureBaseArchetype
-    }
-
-    return archetypes.find((item) => item.id === archetypeId) ?? archetypes[0] ?? creatureBaseArchetype ?? null
-  }, [archetypeId, archetypes, creatureBaseArchetype, selectedCreatureMetaGroupId, selectedModel])
+    return archetypes.find((item) => item.id === archetypeId) ?? archetypes[0] ?? null
+  }, [archetypeId, archetypes])
 
   const trees = useMemo(() => {
     if (!selectedArchetype?.trees) return []
@@ -547,42 +535,9 @@ function App() {
     return groupCreatureArchetypesByCategory(archetypes, creatureTreeProgressById)
   }, [archetypes, creatureTreeProgressById, isCreatureModel])
 
-  const activeCreatureMetaGroupId = useMemo(() => {
-    if (!isCreatureModel) {
-      return 'all'
-    }
-
-    if (selectedCreatureMetaGroupId === 'all') {
-      return 'all'
-    }
-
-    const hasActiveGroup = (creatureArchetypesByCategory[selectedCreatureMetaGroupId] ?? []).length > 0
-    return hasActiveGroup ? selectedCreatureMetaGroupId : 'all'
-  }, [creatureArchetypesByCategory, isCreatureModel, selectedCreatureMetaGroupId])
-
-  const activeCreatureArchetypes = useMemo(() => {
-    if (activeCreatureMetaGroupId === 'all') {
-      return []
-    }
-
-    return creatureArchetypesByCategory[activeCreatureMetaGroupId] ?? []
-  }, [activeCreatureMetaGroupId, creatureArchetypesByCategory])
-
   const hasLoadedTalentTree = useMemo(() => {
-    if (trees.length === 0) {
-      return false
-    }
-
-    if (!isCreatureModel) {
-      return true
-    }
-
-    if (activeCreatureMetaGroupId !== 'all') {
-      return true
-    }
-
-    return selectedArchetype?.id === CREATURE_BASE_ARCHETYPE_ID
-  }, [activeCreatureMetaGroupId, isCreatureModel, selectedArchetype?.id, trees.length])
+    return trees.length > 0
+  }, [trees.length])
 
   const titleContextId = isCreatureModel ? (selectedArchetype?.id ?? '') : 'Player'
 
@@ -686,13 +641,7 @@ function App() {
     document.title = `${matchingSavedBuild.title}${unsavedMarker} // ${baseTitle}`
   }, [isActiveBuildUnsaved, isCreatureModel, matchingSavedBuild?.title, showSavedBuildPrefix, titleContextLabel])
 
-  const emptyStateMessage = useMemo(() => {
-    if (isCreatureModel && activeCreatureMetaGroupId === 'all') {
-      return 'No talents found.'
-    }
-
-    return 'No talents found.'
-  }, [activeCreatureMetaGroupId, isCreatureModel])
+  const emptyStateMessage = 'No talents found.'
 
   const isEffectsSidebarDisabled = !hasLoadedTalentTree
 
@@ -1171,13 +1120,17 @@ function App() {
 
     if (nextModelId === 'Creature') {
       const creatureModel = data?.models?.Creature ?? null
-      const fallbackArchetypeId = Object.values(creatureModel?.archetypes ?? {})[0]?.id ?? ''
-      const hasExplicitCreatureSelection = selectedCreatureMetaGroupId !== 'all' && creatureModel?.archetypes?.[archetypeId]
+      const fallbackArchetypeId = Object.values(creatureModel?.archetypes ?? {}).find(
+        (archetype) => !HIDDEN_CREATURE_ARCHETYPE_IDS.has(archetype.id)
+      )?.id ?? ''
+      const hasExplicitCreatureSelection = Boolean(
+        archetypeId
+          && creatureModel?.archetypes?.[archetypeId]
+          && !HIDDEN_CREATURE_ARCHETYPE_IDS.has(archetypeId)
+      )
       const currentOrFallbackArchetypeId = hasExplicitCreatureSelection
         ? archetypeId
-        : (creatureModel?.archetypes?.[CREATURE_BASE_ARCHETYPE_ID]
-          ? CREATURE_BASE_ARCHETYPE_ID
-          : fallbackArchetypeId)
+        : fallbackArchetypeId
       const creatureDraft = activeBuildsRef.current?.creatures?.[currentOrFallbackArchetypeId]?.skilledTalents ?? {}
       const normalizedSkilledTalents = ensureCreatureArchetypeBuild(
         creatureDraft,
@@ -1318,23 +1271,6 @@ function App() {
     setDecodeBuildError(hasCreatureOvercap(normalizedSkilledTalents, creatureModel) ? 'overcap' : '')
   }
 
-  const handleSelectCreatureMetaGroup = (groupId) => {
-    if (!groupId) return
-
-    if (selectedCreatureMetaGroupId === groupId) {
-      setSelectedCreatureMetaGroupId('all')
-      return
-    }
-
-    setSelectedCreatureMetaGroupId(groupId)
-
-    const groupArchetypes = creatureArchetypesByCategory[groupId] ?? []
-    const hasSelectedArchetypeInGroup = groupArchetypes.some((item) => item.id === selectedArchetype?.id)
-    if (!hasSelectedArchetypeInGroup && groupArchetypes[0]?.id) {
-      handleSelectArchetype(groupArchetypes[0].id)
-    }
-  }
-
   const renderArchetypeChip = (item) => {
     const chipIconPath = resolveAssetImagePath(item.icon)
 
@@ -1404,7 +1340,7 @@ function App() {
   }, [modelId, selectedArchetype?.id, selectedModel])
 
   useEffect(() => {
-    if (!isCreatureModel || selectedCreatureMetaGroupId === 'all') return
+    if (!isCreatureModel) return
 
     const selectedCategory = getCreatureArchetypeCategory(selectedArchetype, creatureTreeProgressById)
     if (selectedCategory && selectedCategory !== selectedCreatureMetaGroupId) {
@@ -1648,57 +1584,40 @@ function App() {
         <section className="subcategory-tabs" aria-label="Subcategories">
           {isCreatureModel ? (
             <div className="creature-tabs" aria-label="Creature type tabs">
-              <div
-                className="creature-meta-pills"
-                role="tablist"
-                aria-label="Creature groups"
-              >
+              <div className="creature-meta-pills" aria-label="Creature groups">
                 {CREATURE_TAB_GROUPS.map((group) => {
                   const groupedArchetypes = creatureArchetypesByCategory[group.id] ?? []
                   if (groupedArchetypes.length === 0) {
                     return null
                   }
 
-                  const isActiveGroup = activeCreatureMetaGroupId === group.id
+                  const options = groupedArchetypes.map((item) => ({
+                    id: item.id,
+                    label: resolveLocalizedValue(item.display, localeStrings, item.id),
+                    iconPath: resolveAssetImagePath(item.icon) || ''
+                  }))
+                  const selectedArchetypeInGroup = groupedArchetypes.find((item) => item.id === selectedArchetype?.id)
+                  const selectedArchetypeIdInGroup = selectedArchetypeInGroup?.id ?? ''
+                  const isActiveGroup = selectedCreatureMetaGroupId === group.id || Boolean(selectedArchetypeInGroup)
                   const groupIconPath = resolveAssetImagePath(group.icon)
 
                   return (
-                    <button
+                    <CreatureArchetypeDropdown
                       key={group.id}
-                      type="button"
-                      className={`meta-chip ${isActiveGroup ? 'active' : ''}`.trim()}
-                      onClick={() => handleSelectCreatureMetaGroup(group.id)}
-                      role="tab"
-                      aria-selected={isActiveGroup}
-                      aria-controls={`creature-group-${group.id}`}
-                    >
-                      {groupIconPath ? (
-                        <img
-                          src={groupIconPath}
-                          alt=""
-                          className="meta-chip-icon"
-                          onError={(event) => {
-                            event.target.style.display = 'none'
-                          }}
-                        />
-                      ) : null}
-                      <span>{group.label}</span>
-                      <ChevronRight className="meta-chip-chevron" aria-hidden="true" />
-                    </button>
+                      groupId={group.id}
+                      groupLabel={group.label}
+                      groupIconPath={groupIconPath}
+                      options={options}
+                      selectedOptionId={selectedArchetypeIdInGroup}
+                      isActive={isActiveGroup}
+                      onSelectOption={(nextArchetypeId) => {
+                        if (!nextArchetypeId) return
+                        setSelectedCreatureMetaGroupId(group.id)
+                        handleSelectArchetype(nextArchetypeId)
+                      }}
+                    />
                   )
                 })}
-              </div>
-
-              <div
-                className={activeCreatureMetaGroupId === 'all' ? 'creature-archetype-strip' : 'creature-archetype-strip expanded'}
-                id={activeCreatureMetaGroupId === 'all' ? undefined : `creature-group-${activeCreatureMetaGroupId}`}
-                aria-hidden={activeCreatureMetaGroupId === 'all'}
-              >
-                {activeCreatureMetaGroupId !== 'all' && (
-                  <div className="chips">
-                    {activeCreatureArchetypes.map((item) => renderArchetypeChip(item))}
-                  </div>
-                )}
               </div>
             </div>
           ) : (
@@ -3489,6 +3408,124 @@ function LocaleDropdown({ locales, selectedLocale, onSelectLocale }) {
               >
                 {LocaleFlag ? <LocaleFlag className="locale-flag" title="" /> : null}
                 <span>{getLocaleLabel(localeCode)}</span>
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function CreatureArchetypeDropdown({
+  groupId,
+  groupLabel,
+  groupIconPath,
+  options,
+  selectedOptionId,
+  isActive,
+  onSelectOption
+}) {
+  const [isOpen, setIsOpen] = useState(false)
+  const containerRef = useRef(null)
+
+  useEffect(() => {
+    if (!isOpen) return
+
+    const handleDocumentClick = (event) => {
+      if (!containerRef.current?.contains(event.target)) {
+        setIsOpen(false)
+      }
+    }
+
+    const handleEscape = (event) => {
+      if (event.key === 'Escape') {
+        setIsOpen(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handleDocumentClick)
+    document.addEventListener('keydown', handleEscape)
+
+    return () => {
+      document.removeEventListener('mousedown', handleDocumentClick)
+      document.removeEventListener('keydown', handleEscape)
+    }
+  }, [isOpen])
+
+  const selectedOption = options.find((option) => option.id === selectedOptionId) ?? null
+  const selectedLabel = selectedOption?.label || 'Select'
+
+  return (
+    <div className="creature-meta-dropdown" ref={containerRef}>
+      <button
+        type="button"
+        className={`meta-chip creature-meta-dropdown-trigger ${isActive ? 'active' : ''}`.trim()}
+        aria-haspopup="listbox"
+        aria-expanded={isOpen}
+        aria-controls={`creature-meta-menu-${groupId}`}
+        onClick={() => setIsOpen((previous) => !previous)}
+      >
+        {groupIconPath ? (
+          <img
+            src={groupIconPath}
+            alt=""
+            className="meta-chip-icon"
+            onError={(event) => {
+              event.target.style.display = 'none'
+            }}
+          />
+        ) : null}
+        <span className="meta-chip-label">{groupLabel}</span>
+        <span className="creature-meta-selected" title={selectedLabel}>
+          {selectedOption?.iconPath ? (
+            <img
+              src={selectedOption.iconPath}
+              alt=""
+              className="creature-meta-option-icon"
+              onError={(event) => {
+                event.target.style.display = 'none'
+              }}
+            />
+          ) : null}
+          <span className="creature-meta-selected-label">{selectedLabel}</span>
+        </span>
+        <span className="creature-meta-caret" aria-hidden="true">▾</span>
+      </button>
+
+      {isOpen && (
+        <div
+          className="creature-meta-menu"
+          id={`creature-meta-menu-${groupId}`}
+          role="listbox"
+          aria-label={`${groupLabel} archetypes`}
+        >
+          {options.map((option) => {
+            const isSelected = option.id === selectedOptionId
+
+            return (
+              <button
+                key={option.id}
+                type="button"
+                role="option"
+                aria-selected={isSelected}
+                className={`creature-meta-option ${isSelected ? 'active' : ''}`.trim()}
+                onClick={() => {
+                  onSelectOption(option.id)
+                  setIsOpen(false)
+                }}
+              >
+                {option.iconPath ? (
+                  <img
+                    src={option.iconPath}
+                    alt=""
+                    className="creature-meta-option-icon"
+                    onError={(event) => {
+                      event.target.style.display = 'none'
+                    }}
+                  />
+                ) : null}
+                <span className="creature-meta-option-label">{option.label}</span>
               </button>
             )
           })}
