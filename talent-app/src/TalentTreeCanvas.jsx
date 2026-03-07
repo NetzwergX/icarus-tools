@@ -11,7 +11,7 @@ function TalentTreeCanvas({ tree, ranks, modelId, localeStrings, skillInvestment
   const [hoveredTalentId, setHoveredTalentId] = useState(null)
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 })
   const showRankProgressBars = modelId !== 'Creature'
-  const talentMap = tree?.talents ?? {}
+  const talentMap = useMemo(() => tree?.talents ?? {}, [tree?.talents])
 
   const visibleTalentMap = useMemo(() => {
     return Object.fromEntries(
@@ -442,6 +442,18 @@ function TalentTooltip({ talent, currentRank, localeStrings, skilledTalents, mou
   const tooltipRef = useRef(null)
   const title = resolveI18nText(talent.display, localeStrings, talent.id)
   const description = resolveI18nText(talent.description, localeStrings, '')
+  const itemDetails = talent.itemDetails && typeof talent.itemDetails === 'object' ? talent.itemDetails : null
+  const itemDisplayName = resolveI18nText(itemDetails?.display, localeStrings, '')
+  const itemDescription = resolveI18nText(itemDetails?.description, localeStrings, '')
+  const itemFlavor = resolveI18nText(itemDetails?.flavorText, localeStrings, '')
+  const itemCategories = Array.isArray(itemDetails?.categories) ? itemDetails.categories.filter(Boolean) : []
+  const itemTags = Array.isArray(itemDetails?.tags) ? itemDetails.tags.filter(Boolean) : []
+  const durable = itemDetails?.durable
+  const buildable = itemDetails?.buildable
+  const deployable = itemDetails?.deployable
+  const consumable = itemDetails?.consumable
+  const equippable = itemDetails?.equippable
+  const usable = itemDetails?.usable
   const rewardRows = (talent.rewards ?? [])
     .map((reward, index) => {
       const rankNum = index + 1
@@ -499,6 +511,173 @@ function TalentTooltip({ talent, currentRank, localeStrings, skilledTalents, mou
 
       {description && <div className="tooltip-description">{description}</div>}
 
+      {itemDetails && (
+        <div className="tooltip-rewards">
+          {itemDisplayName && itemDisplayName !== title && (
+            <div className="reward-row">
+              <span className="rank-label">Item:</span>
+              <span className="rank-value">{itemDisplayName}</span>
+            </div>
+          )}
+          {itemDescription && itemDescription !== description && (
+            <div className="reward-row">
+              <span className="rank-label">Details:</span>
+              <span className="rank-value">{itemDescription}</span>
+            </div>
+          )}
+          {itemFlavor && (
+            <div className="reward-row">
+              <span className="rank-label">Flavor:</span>
+              <span className="rank-value">{itemFlavor}</span>
+            </div>
+          )}
+          {itemCategories.length > 0 && (
+            <div className="reward-row">
+              <span className="rank-label">Categories:</span>
+              <span className="rank-value">{itemCategories.join(', ')}</span>
+            </div>
+          )}
+          {itemTags.length > 0 && (
+            <div className="reward-row">
+              <span className="rank-label">Tags:</span>
+              <span className="rank-value">{itemTags.join(', ')}</span>
+            </div>
+          )}
+          {Number.isFinite(Number(itemDetails?.weight)) && (
+            <div className="reward-row">
+              <span className="rank-label">Weight:</span>
+              <span className="rank-value">{Number(itemDetails.weight)}</span>
+            </div>
+          )}
+          {Number.isFinite(Number(itemDetails?.maxStack)) && (
+            <div className="reward-row">
+              <span className="rank-label">Max Stack:</span>
+              <span className="rank-value">{Number(itemDetails.maxStack)}</span>
+            </div>
+          )}
+
+          {durable && (
+            <>
+              <div className="reward-row">
+                <span className="rank-label">Durability:</span>
+                <span className="rank-value">
+                  {formatList([
+                    `Max ${Number.isFinite(Number(durable.maxDurability)) ? Number(durable.maxDurability) : 'n/a'}`,
+                    durable.destroyedAtZero ? 'Destroyed at 0' : 'Repairable at 0'
+                  ])}
+                </span>
+              </div>
+              {Array.isArray(durable.repairItems) && durable.repairItems.length > 0 && (
+                <div className="reward-row">
+                  <span className="rank-label">Repair:</span>
+                  <span className="rank-value">
+                    {durable.repairItems
+                      .map((entry) => {
+                        const name = resolveI18nText(entry?.display, localeStrings, entry?.itemableId || entry?.staticItemId || '')
+                        const amount = Number.isFinite(Number(entry?.amount)) ? Number(entry.amount) : null
+                        return amount !== null ? `${amount}x ${name}` : name
+                      })
+                      .filter(Boolean)
+                      .join(', ')}
+                  </span>
+                </div>
+              )}
+            </>
+          )}
+
+          {buildable && (
+            <div className="reward-row">
+              <span className="rank-label">Buildable:</span>
+              <span className="rank-value">
+                {formatList([
+                  buildable.typeId ? `Type ${buildable.typeId}` : '',
+                  buildable.pieceType ? `Piece ${buildable.pieceType}` : '',
+                  Number.isFinite(Number(buildable.variationCount)) ? `Variations ${Number(buildable.variationCount)}` : '',
+                  Number.isFinite(Number(buildable.talentGatedVariationCount))
+                    ? `Talent-gated ${Number(buildable.talentGatedVariationCount)}`
+                    : ''
+                ])}
+              </span>
+            </div>
+          )}
+
+          {deployable && (
+            <div className="reward-row">
+              <span className="rank-label">Deployable:</span>
+              <span className="rank-value">
+                {formatList([
+                  Number.isFinite(Number(deployable.variantCount)) ? `Variants ${Number(deployable.variantCount)}` : '',
+                  deployable.affectedByWeather ? 'Affected by weather' : '',
+                  deployable.mustBeOutside ? 'Must be outside' : '',
+                  deployable.forceShowShelterIcon ? 'Shelter icon forced' : ''
+                ])}
+              </span>
+            </div>
+          )}
+
+          {consumable && (
+            <>
+              {Object.keys(consumable.stats ?? {}).length > 0 && (
+                <div className="reward-row">
+                  <span className="rank-label">Consumable stats:</span>
+                  <span className="rank-value">{formatStatMap(consumable.stats)}</span>
+                </div>
+              )}
+              <div className="reward-row">
+                <span className="rank-label">Consumable:</span>
+                <span className="rank-value">
+                  {formatList([
+                    consumable.modifierId ? `Modifier ${consumable.modifierId}` : '',
+                    Number.isFinite(Number(consumable.modifierLifetime)) ? `Duration ${Number(consumable.modifierLifetime)}` : '',
+                    Array.isArray(consumable.byproducts) && consumable.byproducts.length > 0
+                      ? `Byproducts ${consumable.byproducts.join(', ')}`
+                      : ''
+                  ])}
+                </span>
+              </div>
+            </>
+          )}
+
+          {equippable && (
+            <>
+              {Object.keys(equippable.grantedStats ?? {}).length > 0 && (
+                <div className="reward-row">
+                  <span className="rank-label">Granted stats:</span>
+                  <span className="rank-value">{formatStatMap(equippable.grantedStats)}</span>
+                </div>
+              )}
+              {Object.keys(equippable.globalStats ?? {}).length > 0 && (
+                <div className="reward-row">
+                  <span className="rank-label">Global stats:</span>
+                  <span className="rank-value">{formatStatMap(equippable.globalStats)}</span>
+                </div>
+              )}
+              <div className="reward-row">
+                <span className="rank-label">Equippable:</span>
+                <span className="rank-value">
+                  {formatList([
+                    equippable.appliesInAllInventories ? 'Applies in all inventories' : '',
+                    equippable.diminishingReturns ? 'Diminishing returns' : ''
+                  ])}
+                </span>
+              </div>
+            </>
+          )}
+
+          {usable && (
+            <div className="reward-row">
+              <span className="rank-label">Usable:</span>
+              <span className="rank-value">
+                {formatList([
+                  Array.isArray(usable.uses) && usable.uses.length > 0 ? `Uses ${usable.uses.join(', ')}` : '',
+                  usable.alwaysShowContextMenu ? 'Always show context menu' : ''
+                ])}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+
       {effectiveRequiredTalentIds?.length > 0 && (
         <div className="tooltip-prerequisites">
           <div className="label">Prerequisites (any one):</div>
@@ -529,6 +708,30 @@ function TalentTooltip({ talent, currentRank, localeStrings, skilledTalents, mou
       ) : null}
     </div>
   )
+}
+
+function formatList(values) {
+  const normalized = Array.isArray(values) ? values.filter((value) => typeof value === 'string' && value.trim()) : []
+  return normalized.join(' • ')
+}
+
+function formatStatMap(statsMap) {
+  if (!statsMap || typeof statsMap !== 'object') {
+    return ''
+  }
+
+  return Object.entries(statsMap)
+    .map(([key, value]) => {
+      const numericValue = Number(value)
+      if (!Number.isFinite(numericValue)) {
+        return null
+      }
+
+      const prefix = numericValue > 0 ? '+' : ''
+      return `${key}: ${prefix}${numericValue}`
+    })
+    .filter(Boolean)
+    .join(', ')
 }
 
 function getTalentRankCount(talent) {

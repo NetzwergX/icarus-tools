@@ -7,6 +7,7 @@ import TalentTreeCanvas from './TalentTreeCanvas'
 
 const resolveAppUrl = (relativePath) => new URL(relativePath, document.baseURI).toString()
 const DATA_URL = resolveAppUrl('Data/talents.json')
+const BLUEPRINT_DATA_URL = resolveAppUrl('Data/blueprints.json')
 const LOCALE_BASE_URL = resolveAppUrl('Exports/Icarus/Content/Localization/Game')
 const LOCALE_CONFIG_URL = `${LOCALE_BASE_URL}/Game.json`
 const MODIFIER_LABELS_URL = resolveAppUrl('Data/Localization/en.json')
@@ -19,6 +20,7 @@ const SHARE_BUILD_CODEC_VERSION = 1
 const SAVED_BUILD_ACTION_FEEDBACK_MS = 1800
 const SAVED_BUILD_DELETE_ANIMATION_MS = 1950
 const ENABLED_MODELS = ['Player', 'Creature']
+const BLUEPRINT_MODEL_ID = 'Blueprint'
 const RANK_INVESTMENTS = {
   Novice: 0,
   Apprentice: 4,
@@ -100,6 +102,31 @@ function MenuItemLabel({ iconPath, label }) {
   )
 }
 
+function mergeDatasets(talentsData, blueprintsData) {
+  const baseTalents = talentsData && typeof talentsData === 'object' ? talentsData : {}
+  const blueprintData = blueprintsData && typeof blueprintsData === 'object' ? blueprintsData : null
+
+  if (!blueprintData?.models) {
+    return baseTalents
+  }
+
+  return {
+    ...baseTalents,
+    models: {
+      ...(baseTalents.models ?? {}),
+      ...Object.fromEntries(
+        Object.entries(blueprintData.models).filter(([modelId]) => modelId === BLUEPRINT_MODEL_ID)
+      )
+    },
+    ranks: (baseTalents.ranks && Object.keys(baseTalents.ranks).length > 0)
+      ? baseTalents.ranks
+      : (blueprintData.ranks ?? {}),
+    schemaVersion: Number.isFinite(Number(baseTalents.schemaVersion))
+      ? Number(baseTalents.schemaVersion)
+      : Number(blueprintData.schemaVersion)
+  }
+}
+
 function App() {
   const [data, setData] = useState(null)
   const [locale, setLocale] = useState(() => getSavedLocaleFromCookie() || DEFAULT_LOCALE)
@@ -159,13 +186,26 @@ function App() {
 
   useEffect(() => {
     let active = true
-    fetch(DATA_URL)
-      .then((res) => res.json())
-      .then((json) => {
-        if (!active) return
-        setData(json)
-      })
-      .catch((err) => console.error('Failed to load data', err))
+
+    const loadData = async () => {
+      const talentsResponse = await fetch(DATA_URL)
+      const talentsJson = await talentsResponse.json()
+
+      let blueprintsJson = null
+      try {
+        const blueprintsResponse = await fetch(BLUEPRINT_DATA_URL)
+        if (blueprintsResponse.ok) {
+          blueprintsJson = await blueprintsResponse.json()
+        }
+      } catch (error) {
+        console.warn('Blueprint data not available, Tech Tree mode will be disabled.', error)
+      }
+
+      if (!active) return
+      setData(mergeDatasets(talentsJson, blueprintsJson))
+    }
+
+    loadData().catch((err) => console.error('Failed to load data', err))
 
     return () => {
       active = false
@@ -199,11 +239,11 @@ function App() {
         )
         const hasOvercap = sharedBuild.modelId === 'Creature'
           ? hasCreatureOvercap(sharedBuild.skilledTalents, nextModel)
-          : hasPlayerOvercap(
+          : (sharedBuild.modelId === 'Player' && hasPlayerOvercap(
             sharedBuild.skilledTalents,
             nextModel,
             getMaxPlayerTalentPoints(nextPlayerModifierIds, data.playerTalentModifiers)
-          )
+          ))
 
         setModelId(sharedBuild.modelId)
         setArchetypeId(sharedBuild.archetypeId)
@@ -218,6 +258,33 @@ function App() {
     }
 
     const activeBuilds = activeBuildsRef.current
+    const requestedModelId = activeBuilds?.lastContext?.modelId
+    const initialModelId = data.models?.[requestedModelId] ? requestedModelId : 'Player'
+
+    if (initialModelId === BLUEPRINT_MODEL_ID) {
+      const blueprintModel = data.models[BLUEPRINT_MODEL_ID]
+      const requestedArchetypeId = activeBuilds?.lastContext?.archetypeId || ''
+      const fallbackArchetypeId = Object.values(blueprintModel?.archetypes ?? {})[0]?.id ?? ''
+      const resolvedArchetypeId = blueprintModel?.archetypes?.[requestedArchetypeId]
+        ? requestedArchetypeId
+        : fallbackArchetypeId
+      const blueprintDraft = getScopedArchetypeTalentState(
+        activeBuilds?.blueprints?.[resolvedArchetypeId]?.skilledTalents ?? {},
+        blueprintModel,
+        resolvedArchetypeId
+      )
+
+      setBuildWarnings([])
+      setPendingSharedMetadata(getActiveBuildMetadata(activeBuilds, BLUEPRINT_MODEL_ID, resolvedArchetypeId))
+      setModelId(BLUEPRINT_MODEL_ID)
+      setArchetypeId(resolvedArchetypeId)
+      setSkilledTalents(blueprintDraft)
+      setSelectedPlayerModifierIds([])
+      setDecodeBuildError('')
+      setHasHydratedActiveBuild(true)
+      return
+    }
+
     const playerModel = data.models.Player
     const playerDraft = activeBuilds?.player?.skilledTalents ?? {}
     const playerArchetypeId = activeBuilds?.player?.archetypeId ?? ''
@@ -457,6 +524,7 @@ function App() {
   }, [selectedModel])
 
   const isCreatureModel = modelId === 'Creature'
+  const isBlueprintModel = modelId === BLUEPRINT_MODEL_ID
 
   const creatureTreeProgressById = useMemo(
     () => getCreatureTreeProgressById(selectedModel),
@@ -539,15 +607,19 @@ function App() {
     return trees.length > 0
   }, [trees.length])
 
-  const titleContextId = isCreatureModel ? (selectedArchetype?.id ?? '') : 'Player'
+  const titleContextId = isCreatureModel || isBlueprintModel ? (selectedArchetype?.id ?? '') : 'Player'
 
   const titleContextLabel = useMemo(() => {
-    if (isCreatureModel) {
-      return resolveLocalizedValue(selectedArchetype?.display, localeStrings, selectedArchetype?.id || 'Creature')
+    if (isCreatureModel || isBlueprintModel) {
+      return resolveLocalizedValue(
+        selectedArchetype?.display,
+        localeStrings,
+        selectedArchetype?.id || (isBlueprintModel ? 'Tech Tree' : 'Creature')
+      )
     }
 
     return 'Player'
-  }, [isCreatureModel, localeStrings, selectedArchetype?.display, selectedArchetype?.id])
+  }, [isBlueprintModel, isCreatureModel, localeStrings, selectedArchetype?.display, selectedArchetype?.id])
 
   const currentBuildName = useMemo(() => {
     return typeof pendingSharedMetadata?.title === 'string' ? pendingSharedMetadata.title.trim() : ''
@@ -588,8 +660,12 @@ function App() {
       return ensureCreatureArchetypeBuild(skilledTalents ?? {}, data?.models?.Creature, titleContextId)
     }
 
+    if (modelId === BLUEPRINT_MODEL_ID) {
+      return getScopedArchetypeTalentState(skilledTalents ?? {}, data?.models?.[BLUEPRINT_MODEL_ID], titleContextId)
+    }
+
     return normalizeTalentState(skilledTalents ?? {})
-  }, [data?.models?.Creature, modelId, skilledTalents, titleContextId])
+  }, [data?.models, modelId, skilledTalents, titleContextId])
 
   const showSavedBuildPrefix = Boolean(matchingSavedBuild) && hasMeaningfulCurrentBuild
 
@@ -600,7 +676,13 @@ function App() {
 
     const normalizedSavedTalents = modelId === 'Creature'
       ? ensureCreatureArchetypeBuild(matchingSavedBuild.skilledTalents ?? {}, data?.models?.Creature, titleContextId)
-      : normalizeTalentState(matchingSavedBuild.skilledTalents ?? {})
+      : (modelId === BLUEPRINT_MODEL_ID
+        ? getScopedArchetypeTalentState(
+          matchingSavedBuild.skilledTalents ?? {},
+          data?.models?.[BLUEPRINT_MODEL_ID],
+          titleContextId
+        )
+        : normalizeTalentState(matchingSavedBuild.skilledTalents ?? {}))
 
     const talentsChanged = !areTalentStatesEqual(normalizedCurrentTitleTalents, normalizedSavedTalents)
     const currentModifierIds = modelId === 'Player'
@@ -619,8 +701,8 @@ function App() {
 
     return talentsChanged || modifiersChanged || currentDescription !== savedDescription
   }, [
+    data?.models,
     data?.playerTalentModifiers,
-    data?.models?.Creature,
     matchingSavedBuild,
     modelId,
     normalizedSelectedPlayerModifierIds,
@@ -631,7 +713,10 @@ function App() {
   ])
 
   useEffect(() => {
-    const baseTitle = `${titleContextLabel || (isCreatureModel ? 'Creature' : 'Player')} // Talents // ICARUS`
+    const fallbackTitleContextLabel = isCreatureModel
+      ? 'Creature'
+      : (isBlueprintModel ? 'Tech Tree' : 'Player')
+    const baseTitle = `${titleContextLabel || fallbackTitleContextLabel} // Talents // ICARUS`
     if (!showSavedBuildPrefix || !matchingSavedBuild?.title) {
       document.title = baseTitle
       return
@@ -639,14 +724,14 @@ function App() {
 
     const unsavedMarker = isActiveBuildUnsaved ? '*' : ''
     document.title = `${matchingSavedBuild.title}${unsavedMarker} // ${baseTitle}`
-  }, [isActiveBuildUnsaved, isCreatureModel, matchingSavedBuild?.title, showSavedBuildPrefix, titleContextLabel])
+  }, [isActiveBuildUnsaved, isBlueprintModel, isCreatureModel, matchingSavedBuild?.title, showSavedBuildPrefix, titleContextLabel])
 
   const emptyStateMessage = 'No talents found.'
 
   const isEffectsSidebarDisabled = !hasLoadedTalentTree
 
   const effectScopeTreeIds = useMemo(() => {
-    if (modelId !== 'Creature') {
+    if (modelId !== 'Creature' && modelId !== BLUEPRINT_MODEL_ID) {
       return null
     }
 
@@ -857,11 +942,11 @@ function App() {
         }
       }
 
-      if (!isSoloTree && nextSummary.talentPoints > maxPlayerTalentPoints) {
+      if (modelId === 'Player' && !isSoloTree && nextSummary.talentPoints > maxPlayerTalentPoints) {
         return prev
       }
 
-      if (isSoloTree && nextSummary.soloPoints > MAX_SOLO_POINTS) {
+      if (modelId === 'Player' && isSoloTree && nextSummary.soloPoints > MAX_SOLO_POINTS) {
         return prev
       }
 
@@ -886,11 +971,12 @@ function App() {
     const initialTitle = pendingSharedMetadata?.title || ''
     const initialDescription = pendingSharedMetadata?.description || ''
     const isCreatureBuild = modelId === 'Creature'
+    const isBlueprintBuild = modelId === BLUEPRINT_MODEL_ID
     const duplicate = findDuplicateSavedBuild({
       savedBuilds,
       title: initialTitle,
       modelId,
-      contextId: isCreatureBuild ? (selectedArchetype?.id ?? '') : 'Player'
+      contextId: isCreatureBuild || isBlueprintBuild ? (selectedArchetype?.id ?? '') : 'Player'
     })
 
     setSaveDialogTitle(initialTitle)
@@ -910,13 +996,20 @@ function App() {
     const title = saveDialogTitle.trim() || 'Untitled Build'
     const description = saveDialogDescription.trim()
     const isCreatureBuild = modelId === 'Creature'
+    const isBlueprintBuild = modelId === BLUEPRINT_MODEL_ID
     const scopedSkilledTalents = isCreatureBuild
       ? ensureCreatureArchetypeBuild(skilledTalents, data?.models?.Creature, selectedArchetype?.id ?? '')
-      : skilledTalents
-    const contextName = isCreatureBuild
-      ? resolveLocalizedValue(selectedArchetype?.display, localeStrings, selectedArchetype?.id || 'Creature')
+      : (isBlueprintBuild
+        ? getScopedArchetypeTalentState(skilledTalents, data?.models?.[BLUEPRINT_MODEL_ID], selectedArchetype?.id ?? '')
+        : skilledTalents)
+    const contextName = isCreatureBuild || isBlueprintBuild
+      ? resolveLocalizedValue(
+        selectedArchetype?.display,
+        localeStrings,
+        selectedArchetype?.id || (isBlueprintBuild ? 'Tech Tree' : 'Creature')
+      )
       : 'Player'
-    const contextIcon = isCreatureBuild
+    const contextIcon = isCreatureBuild || isBlueprintBuild
       ? (resolveAssetImagePath(selectedArchetype?.icon) || '')
       : ''
 
@@ -924,7 +1017,7 @@ function App() {
       savedBuilds,
       title,
       modelId,
-      contextId: isCreatureBuild ? (selectedArchetype?.id ?? '') : 'Player'
+      contextId: isCreatureBuild || isBlueprintBuild ? (selectedArchetype?.id ?? '') : 'Player'
     })
 
     if (duplicate && !forceOverwrite) {
@@ -943,8 +1036,8 @@ function App() {
       playerModifierIds: modelId === 'Player'
         ? normalizePlayerModifierIds(selectedPlayerModifierIds, data?.playerTalentModifiers)
         : [],
-      buildType: isCreatureBuild ? 'creature' : 'player',
-      contextId: isCreatureBuild ? (selectedArchetype?.id ?? '') : 'Player',
+      buildType: isCreatureBuild ? 'creature' : (isBlueprintBuild ? 'blueprint' : 'player'),
+      contextId: isCreatureBuild || isBlueprintBuild ? (selectedArchetype?.id ?? '') : 'Player',
       contextName,
       contextIcon
     }
@@ -961,8 +1054,8 @@ function App() {
         playerModifierIds: modelId === 'Player'
           ? normalizePlayerModifierIds(selectedPlayerModifierIds, data?.playerTalentModifiers)
           : [],
-        buildType: isCreatureBuild ? 'creature' : 'player',
-        contextId: isCreatureBuild ? (selectedArchetype?.id ?? '') : 'Player',
+        buildType: isCreatureBuild ? 'creature' : (isBlueprintBuild ? 'blueprint' : 'player'),
+        contextId: isCreatureBuild || isBlueprintBuild ? (selectedArchetype?.id ?? '') : 'Player',
         contextName,
         contextIcon
       }
@@ -992,6 +1085,7 @@ function App() {
     const savedModel = data.models[savedModelId]
     const savedArchetypeId = savedBuild.contextId || savedBuild.archetypeId || ''
     const fallbackCreatureArchetypeId = Object.values(savedModel?.archetypes ?? {})[0]?.id ?? ''
+    const fallbackBlueprintArchetypeId = Object.values(savedModel?.archetypes ?? {})[0]?.id ?? ''
 
     const normalizedSkilledTalents = savedModelId === 'Creature'
       ? ensureCreatureArchetypeBuild(
@@ -999,7 +1093,13 @@ function App() {
         savedModel,
         savedModel.archetypes?.[savedArchetypeId] ? savedArchetypeId : fallbackCreatureArchetypeId
       )
-      : (savedBuild.skilledTalents ?? {})
+      : (savedModelId === BLUEPRINT_MODEL_ID
+        ? getScopedArchetypeTalentState(
+          savedBuild.skilledTalents ?? {},
+          savedModel,
+          savedModel.archetypes?.[savedArchetypeId] ? savedArchetypeId : fallbackBlueprintArchetypeId
+        )
+        : (savedBuild.skilledTalents ?? {}))
     const nextPlayerModifierIds = savedModelId === 'Player'
       ? normalizePlayerModifierIds(savedBuild.playerModifierIds, data?.playerTalentModifiers)
       : []
@@ -1007,18 +1107,20 @@ function App() {
     setModelId(savedModelId)
     setArchetypeId(savedModelId === 'Creature'
       ? (savedModel.archetypes?.[savedArchetypeId] ? savedArchetypeId : fallbackCreatureArchetypeId)
-      : (savedBuild.archetypeId || '')
+      : (savedModelId === BLUEPRINT_MODEL_ID
+        ? (savedModel.archetypes?.[savedArchetypeId] ? savedArchetypeId : fallbackBlueprintArchetypeId)
+        : (savedBuild.archetypeId || ''))
     )
     setSkilledTalents(normalizedSkilledTalents)
     setSelectedPlayerModifierIds(nextPlayerModifierIds)
 
     const hasOvercap = savedModelId === 'Creature'
       ? hasCreatureOvercap(normalizedSkilledTalents, savedModel)
-      : hasPlayerOvercap(
+      : (savedModelId === 'Player' && hasPlayerOvercap(
         normalizedSkilledTalents,
         savedModel,
         getMaxPlayerTalentPoints(nextPlayerModifierIds, data?.playerTalentModifiers)
-      )
+      ))
 
     setDecodeBuildError(hasOvercap ? 'overcap' : '')
     setBuildWarnings([])
@@ -1143,6 +1245,23 @@ function App() {
       setSelectedPlayerModifierIds([])
       setPendingSharedMetadata(getActiveBuildMetadata(activeBuildsRef.current, 'Creature', currentOrFallbackArchetypeId))
       setDecodeBuildError(hasCreatureOvercap(normalizedSkilledTalents, creatureModel) ? 'overcap' : '')
+    } else if (nextModelId === BLUEPRINT_MODEL_ID) {
+      const blueprintModel = data?.models?.[BLUEPRINT_MODEL_ID] ?? null
+      const fallbackArchetypeId = Object.values(blueprintModel?.archetypes ?? {})[0]?.id ?? ''
+      const hasExplicitBlueprintSelection = Boolean(archetypeId && blueprintModel?.archetypes?.[archetypeId])
+      const currentOrFallbackArchetypeId = hasExplicitBlueprintSelection ? archetypeId : fallbackArchetypeId
+      const blueprintDraft = activeBuildsRef.current?.blueprints?.[currentOrFallbackArchetypeId]?.skilledTalents ?? {}
+      const normalizedSkilledTalents = getScopedArchetypeTalentState(
+        blueprintDraft,
+        blueprintModel,
+        currentOrFallbackArchetypeId
+      )
+
+      setArchetypeId(currentOrFallbackArchetypeId)
+      setSkilledTalents(normalizedSkilledTalents)
+      setSelectedPlayerModifierIds([])
+      setPendingSharedMetadata(getActiveBuildMetadata(activeBuildsRef.current, BLUEPRINT_MODEL_ID, currentOrFallbackArchetypeId))
+      setDecodeBuildError('')
     } else {
       const playerDraft = activeBuildsRef.current?.player?.skilledTalents ?? {}
       const playerArchetypeId = activeBuildsRef.current?.player?.archetypeId ?? ''
@@ -1252,6 +1371,22 @@ function App() {
   const handleSelectArchetype = (nextArchetypeId) => {
     if (!nextArchetypeId || nextArchetypeId === selectedArchetype?.id) return
 
+    if (modelId === BLUEPRINT_MODEL_ID) {
+      const blueprintModel = data?.models?.[BLUEPRINT_MODEL_ID] ?? null
+      const blueprintDraft = activeBuildsRef.current?.blueprints?.[nextArchetypeId]?.skilledTalents ?? {}
+      const normalizedSkilledTalents = getScopedArchetypeTalentState(
+        blueprintDraft,
+        blueprintModel,
+        nextArchetypeId
+      )
+
+      setArchetypeId(nextArchetypeId)
+      setSkilledTalents(normalizedSkilledTalents)
+      setPendingSharedMetadata(getActiveBuildMetadata(activeBuildsRef.current, BLUEPRINT_MODEL_ID, nextArchetypeId))
+      setDecodeBuildError('')
+      return
+    }
+
     if (modelId !== 'Creature') {
       setArchetypeId(nextArchetypeId)
       return
@@ -1352,10 +1487,10 @@ function App() {
     if (decodeBuildError !== 'overcap') return
     const stillOvercap = modelId === 'Creature'
       ? hasCreatureOvercap(skilledTalents, selectedModel)
-      : (
+      : (modelId === 'Player' && (
         pointsSummary.talentPoints > maxPlayerTalentPoints
         || pointsSummary.soloPoints > MAX_SOLO_POINTS
-      )
+      ))
 
     if (!stillOvercap) {
       setDecodeBuildError('')
@@ -1443,7 +1578,11 @@ function App() {
               <button type="button" className="menu-link active">
                 <MenuItemLabel iconPath={topMenuIcons.Player} label="Player" />
               </button>
-              <button type="button" className="menu-link" disabled title="Coming sooon…">
+              <button
+                type="button"
+                className={modelId === BLUEPRINT_MODEL_ID ? 'menu-link active' : 'menu-link'}
+                onClick={() => handleSelectModel(BLUEPRINT_MODEL_ID)}
+              >
                 <MenuItemLabel iconPath={topMenuIcons.TechTree} label="Tech Tree" />
               </button>
               <button type="button" className="menu-link" disabled title="Coming sooon…">
@@ -1540,7 +1679,11 @@ function App() {
                 />
               </button>
             ))}
-            <button type="button" className="menu-link" disabled title="Coming sooon…">
+            <button
+              type="button"
+              className={modelId === BLUEPRINT_MODEL_ID ? 'menu-link active' : 'menu-link'}
+              onClick={() => handleSelectModel(BLUEPRINT_MODEL_ID)}
+            >
               <MenuItemLabel iconPath={topMenuIcons.TechTree} label="Tech Tree" />
             </button>
             <button type="button" className="menu-link" disabled title="Coming sooon…">
@@ -1635,6 +1778,19 @@ function App() {
                   <div className="summary-inline-item">
                     <span className="summary-inline-label">Min Level</span>
                     <span className="summary-inline-value">{selectedCreatureProgress.points}/{selectedCreatureProgress.levelCap}</span>
+                  </div>
+                </>
+              ) : isBlueprintModel ? (
+                <>
+                  <div className="summary-inline-item">
+                    <span className="summary-inline-label">Points</span>
+                    <span className="summary-inline-value">{pointsSummary.talentPoints}</span>
+                  </div>
+                  <div className="summary-inline-item">
+                    <span className="summary-inline-label">Unlocked</span>
+                    <span className="summary-inline-value">{Object.values(skilledTalents ?? {}).reduce((sum, treeTalents) => {
+                      return sum + Object.values(treeTalents ?? {}).filter((rank) => Number(rank) > 0).length
+                    }, 0)}</span>
                   </div>
                 </>
               ) : (
@@ -1906,12 +2062,12 @@ function App() {
 
                     <div className={`effects-sidebar-toprow ${modelId === 'Player' && data?.playerTalentModifiers?.length > 0 ? 'with-modifiers' : ''}`}>
                       <h2 className="effects-sidebar-title">Effects</h2>
-                      {modelId === 'Creature' ? (
+                      {modelId === 'Creature' || modelId === BLUEPRINT_MODEL_ID ? (
                         <div className="effects-context-label" title={selectedArchetype?.id || ''}>
                           {resolveLocalizedValue(
                             selectedArchetype?.display,
                             localeStrings,
-                            selectedArchetype?.id || 'Creature'
+                            selectedArchetype?.id || (modelId === BLUEPRINT_MODEL_ID ? 'Tech Tree' : 'Creature')
                           )}
                         </div>
                       ) : (
@@ -2020,7 +2176,7 @@ function App() {
             </p>
             {saveDuplicateMatch && (
               <p className="confirm-body save-dialog-warning" role="alert">
-                A build named "{saveDuplicateMatch.title}" already exists for "{saveDuplicateMatch.contextName || (saveDuplicateMatch.modelId === 'Creature' ? 'this creature' : 'Player')}". Overwrite it?
+                A build named "{saveDuplicateMatch.title}" already exists for "{saveDuplicateMatch.contextName || (saveDuplicateMatch.modelId === 'Creature' ? 'this creature' : (saveDuplicateMatch.modelId === BLUEPRINT_MODEL_ID ? 'this tech tier' : 'Player'))}". Overwrite it?
               </p>
             )}
             <form
@@ -2283,16 +2439,20 @@ function createShareBuildPayload({
   schemaVersion,
   metadata
 }) {
-  const normalizedModelId = modelId === 'Creature' ? 'Creature' : 'Player'
+  const normalizedModelId = modelId === 'Creature'
+    ? 'Creature'
+    : (modelId === BLUEPRINT_MODEL_ID ? BLUEPRINT_MODEL_ID : 'Player')
   const selectedModel = models?.[normalizedModelId]
 
-  const resolvedArchetypeId = normalizedModelId === 'Creature'
+  const resolvedArchetypeId = normalizedModelId === 'Creature' || normalizedModelId === BLUEPRINT_MODEL_ID
     ? (selectedModel?.archetypes?.[archetypeId] ? archetypeId : (Object.values(selectedModel?.archetypes ?? {})[0]?.id ?? ''))
     : (archetypeId || '')
 
   const normalizedTalents = normalizedModelId === 'Creature'
     ? ensureCreatureArchetypeBuild(skilledTalents ?? {}, selectedModel, resolvedArchetypeId)
-    : normalizeTalentState(skilledTalents ?? {})
+    : (normalizedModelId === BLUEPRINT_MODEL_ID
+      ? getScopedArchetypeTalentState(skilledTalents ?? {}, selectedModel, resolvedArchetypeId)
+      : normalizeTalentState(skilledTalents ?? {}))
 
   const sharePayload = {
     cv: SHARE_BUILD_CODEC_VERSION,
@@ -2406,7 +2566,9 @@ function parseSharedBuildFromSearch(searchValue, { models, schemaVersion, player
     }
   }
 
-  const modelId = parsed.m === 'Creature' ? 'Creature' : (parsed.m === 'Player' ? 'Player' : '')
+  const modelId = parsed.m === 'Creature'
+    ? 'Creature'
+    : (parsed.m === BLUEPRINT_MODEL_ID ? BLUEPRINT_MODEL_ID : (parsed.m === 'Player' ? 'Player' : ''))
   if (!modelId || !models?.[modelId]) {
     return {
       hasSharedBuildParam: true,
@@ -2432,17 +2594,23 @@ function parseSharedBuildFromSearch(searchValue, { models, schemaVersion, player
   let resolvedArchetypeId = typeof parsed.a === 'string' ? parsed.a : ''
   const warnings = []
 
-  if (modelId === 'Creature') {
+  if (modelId === 'Creature' || modelId === BLUEPRINT_MODEL_ID) {
     const fallbackArchetypeId = Object.values(model.archetypes ?? {})[0]?.id ?? ''
     if (!model.archetypes?.[resolvedArchetypeId]) {
-      warnings.push('This shared build references a creature archetype that no longer exists. A fallback archetype is shown.')
+      warnings.push(
+        modelId === 'Creature'
+          ? 'This shared build references a creature archetype that no longer exists. A fallback archetype is shown.'
+          : 'This shared build references a tech tier that no longer exists. A fallback tier is shown.'
+      )
       resolvedArchetypeId = fallbackArchetypeId
     }
   }
 
   const normalizedTalents = modelId === 'Creature'
     ? ensureCreatureArchetypeBuild(rawTalents, model, resolvedArchetypeId)
-    : rawTalents
+    : (modelId === BLUEPRINT_MODEL_ID
+      ? getScopedArchetypeTalentState(rawTalents, model, resolvedArchetypeId)
+      : rawTalents)
   const normalizedPlayerModifierIds = modelId === 'Player'
     ? normalizePlayerModifierIds(parsed.pm, playerTalentModifiers)
     : []
@@ -2537,10 +2705,13 @@ function normalizeSavedBuildTitle(value) {
 }
 
 function normalizeSavedBuildSubjectKey({ modelId, contextId }) {
-  const normalizedModelId = modelId === 'Creature' ? 'Creature' : 'Player'
-  if (normalizedModelId === 'Creature') {
+  const normalizedModelId = modelId === 'Creature'
+    ? 'Creature'
+    : (modelId === BLUEPRINT_MODEL_ID ? BLUEPRINT_MODEL_ID : 'Player')
+
+  if (normalizedModelId === 'Creature' || normalizedModelId === BLUEPRINT_MODEL_ID) {
     const normalizedContextId = typeof contextId === 'string' ? contextId.trim() : ''
-    return normalizedContextId ? `Creature:${normalizedContextId}` : ''
+    return normalizedContextId ? `${normalizedModelId}:${normalizedContextId}` : ''
   }
 
   return 'Player'
@@ -2736,17 +2907,34 @@ function expandRequiredTalentId(requiredTalentId, talentMap, visiting) {
 }
 
 function hasMeaningfulBuildState({ modelId, archetypeId, skilledTalents, selectedPlayerModifierIds, models }) {
-  const normalizedModelId = modelId === 'Creature' ? 'Creature' : 'Player'
+  const normalizedModelId = modelId === 'Creature'
+    ? 'Creature'
+    : (modelId === BLUEPRINT_MODEL_ID ? BLUEPRINT_MODEL_ID : 'Player')
 
-  if (normalizedModelId !== 'Creature') {
+  if (normalizedModelId === 'Player') {
     return hasAnySpentPoints(skilledTalents) || normalizePlayerModifierIds(selectedPlayerModifierIds).length > 0
   }
 
-  const creatureModel = models?.Creature
-  const baselineState = ensureCreatureArchetypeBuild({}, creatureModel, archetypeId)
-  const normalizedCurrentState = ensureCreatureArchetypeBuild(skilledTalents ?? {}, creatureModel, archetypeId)
+  if (normalizedModelId === 'Creature') {
+    const creatureModel = models?.Creature
+    const baselineState = ensureCreatureArchetypeBuild({}, creatureModel, archetypeId)
+    const normalizedCurrentState = ensureCreatureArchetypeBuild(skilledTalents ?? {}, creatureModel, archetypeId)
 
-  return !areTalentStatesEqual(normalizedCurrentState, baselineState)
+    return !areTalentStatesEqual(normalizedCurrentState, baselineState)
+  }
+
+  const blueprintModel = models?.[BLUEPRINT_MODEL_ID]
+  const archetype = blueprintModel?.archetypes?.[archetypeId]
+  if (!archetype) {
+    return false
+  }
+
+  const normalizedCurrentState = pickTalentsForTreeIds(
+    skilledTalents ?? {},
+    getArchetypeTreeIds(archetype)
+  )
+
+  return hasAnySpentPoints(normalizedCurrentState)
 }
 
 function hasAnySpentPoints(talentState) {
@@ -2930,7 +3118,8 @@ function readActiveBuildsFromStorage() {
     return {
       lastContext: { modelId: 'Player', archetypeId: '' },
       player: { archetypeId: '', skilledTalents: {}, modifierIds: [], metadata: null },
-      creatures: {}
+      creatures: {},
+      blueprints: {}
     }
   }
 
@@ -2940,7 +3129,8 @@ function readActiveBuildsFromStorage() {
       return {
         lastContext: { modelId: 'Player', archetypeId: '' },
         player: { archetypeId: '', skilledTalents: {}, modifierIds: [], metadata: null },
-        creatures: {}
+        creatures: {},
+        blueprints: {}
       }
     }
 
@@ -2977,9 +3167,25 @@ function readActiveBuildsFromStorage() {
       })
     }
 
+    const blueprints = {}
+    if (parsed.blueprints && typeof parsed.blueprints === 'object') {
+      Object.entries(parsed.blueprints).forEach(([archetypeId, blueprintBuild]) => {
+        if (!archetypeId || typeof blueprintBuild !== 'object' || !blueprintBuild) return
+        blueprints[archetypeId] = {
+          archetypeId,
+          skilledTalents: blueprintBuild.skilledTalents && typeof blueprintBuild.skilledTalents === 'object'
+            ? blueprintBuild.skilledTalents
+            : {},
+          metadata: normalizeShareMetadata(blueprintBuild.metadata)
+        }
+      })
+    }
+
     const lastContext = parsed.lastContext && typeof parsed.lastContext === 'object'
       ? {
-        modelId: parsed.lastContext.modelId === 'Creature' ? 'Creature' : 'Player',
+        modelId: parsed.lastContext.modelId === 'Creature'
+          ? 'Creature'
+          : (parsed.lastContext.modelId === BLUEPRINT_MODEL_ID ? BLUEPRINT_MODEL_ID : 'Player'),
         archetypeId: typeof parsed.lastContext.archetypeId === 'string' ? parsed.lastContext.archetypeId : ''
       }
       : {
@@ -2987,12 +3193,13 @@ function readActiveBuildsFromStorage() {
         archetypeId: ''
       }
 
-    return { lastContext, player, creatures }
+    return { lastContext, player, creatures, blueprints }
   } catch {
     return {
       lastContext: { modelId: 'Player', archetypeId: '' },
       player: { archetypeId: '', skilledTalents: {}, modifierIds: [], metadata: null },
-      creatures: {}
+      creatures: {},
+      blueprints: {}
     }
   }
 }
@@ -3054,6 +3261,18 @@ function ensureCreatureArchetypeBuild(talentState, creatureModel, archetypeId) {
   return nextState
 }
 
+function getScopedArchetypeTalentState(talentState, model, archetypeId) {
+  const archetype = model?.archetypes?.[archetypeId]
+  if (!archetype) {
+    return {}
+  }
+
+  return pickTalentsForTreeIds(
+    normalizeTalentState(talentState ?? {}),
+    getArchetypeTreeIds(archetype)
+  )
+}
+
 function createNextActiveBuildsSnapshot({
   previous,
   modelId,
@@ -3068,12 +3287,15 @@ function createNextActiveBuildsSnapshot({
     : {
       lastContext: { modelId: 'Player', archetypeId: '' },
       player: { archetypeId: '', skilledTalents: {}, modifierIds: [], metadata: null },
-      creatures: {}
+      creatures: {},
+      blueprints: {}
     }
 
   const next = {
     lastContext: {
-      modelId: modelId === 'Creature' ? 'Creature' : 'Player',
+      modelId: modelId === 'Creature'
+        ? 'Creature'
+        : (modelId === BLUEPRINT_MODEL_ID ? BLUEPRINT_MODEL_ID : 'Player'),
       archetypeId: archetypeId || ''
     },
     player: {
@@ -3082,7 +3304,8 @@ function createNextActiveBuildsSnapshot({
       modifierIds: normalizePlayerModifierIds(baseline.player?.modifierIds),
       metadata: normalizeShareMetadata(baseline.player?.metadata)
     },
-    creatures: { ...(baseline.creatures ?? {}) }
+    creatures: { ...(baseline.creatures ?? {}) },
+    blueprints: { ...(baseline.blueprints ?? {}) }
   }
 
   if (modelId === 'Creature') {
@@ -3090,6 +3313,22 @@ function createNextActiveBuildsSnapshot({
     const normalizedSkilledTalents = ensureCreatureArchetypeBuild(skilledTalents, creatureModel, archetypeId)
     if (archetypeId) {
       next.creatures[archetypeId] = {
+        archetypeId,
+        skilledTalents: normalizedSkilledTalents,
+        metadata: normalizeShareMetadata(metadata)
+      }
+    }
+    return next
+  }
+
+  if (modelId === BLUEPRINT_MODEL_ID) {
+    if (archetypeId) {
+      const blueprintModel = models?.[BLUEPRINT_MODEL_ID]
+      const archetype = blueprintModel?.archetypes?.[archetypeId]
+      const normalizedSkilledTalents = archetype
+        ? pickTalentsForTreeIds(skilledTalents ?? {}, getArchetypeTreeIds(archetype))
+        : {}
+      next.blueprints[archetypeId] = {
         archetypeId,
         skilledTalents: normalizedSkilledTalents,
         metadata: normalizeShareMetadata(metadata)
@@ -3113,13 +3352,19 @@ function getActiveBuildMetadata(activeBuilds, modelId, archetypeId) {
     return normalizeShareMetadata(activeBuilds?.creatures?.[archetypeId]?.metadata)
   }
 
+  if (modelId === BLUEPRINT_MODEL_ID) {
+    return normalizeShareMetadata(activeBuilds?.blueprints?.[archetypeId]?.metadata)
+  }
+
   return normalizeShareMetadata(activeBuilds?.player?.metadata)
 }
 
 function resolveSavedBuildContext(savedBuild, data, localeStrings) {
-  const isCreatureBuild = savedBuild?.buildType === 'creature' || savedBuild?.modelId === 'Creature'
+  const modelId = savedBuild?.modelId
+  const isCreatureBuild = savedBuild?.buildType === 'creature' || modelId === 'Creature'
+  const isBlueprintBuild = savedBuild?.buildType === 'blueprint' || modelId === BLUEPRINT_MODEL_ID
 
-  if (!isCreatureBuild) {
+  if (!isCreatureBuild && !isBlueprintBuild) {
     return {
       name: 'Player',
       icon: ''
@@ -3127,11 +3372,13 @@ function resolveSavedBuildContext(savedBuild, data, localeStrings) {
   }
 
   const contextId = savedBuild?.contextId || savedBuild?.archetypeId || ''
-  const archetype = data?.models?.Creature?.archetypes?.[contextId]
+  const targetModelId = isBlueprintBuild ? BLUEPRINT_MODEL_ID : 'Creature'
+  const fallbackName = isBlueprintBuild ? contextId || 'Tech Tier' : contextId || 'Creature'
+  const archetype = data?.models?.[targetModelId]?.archetypes?.[contextId]
 
   return {
     name: savedBuild?.contextName
-      || resolveLocalizedValue(archetype?.display, localeStrings, contextId || 'Creature'),
+      || resolveLocalizedValue(archetype?.display, localeStrings, fallbackName),
     icon: savedBuild?.contextIcon
       || resolveAssetImagePath(archetype?.icon)
       || ''

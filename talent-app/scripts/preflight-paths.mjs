@@ -8,7 +8,8 @@ const workspaceRoot = path.resolve(__dirname, '..', '..')
 const appRoot = path.join(workspaceRoot, 'talent-app')
 
 const publicRoot = path.join(appRoot, 'public')
-const dataFilePath = path.join(publicRoot, 'Data', 'talents.json')
+const talentsDataFilePath = path.join(publicRoot, 'Data', 'talents.json')
+const blueprintsDataFilePath = path.join(publicRoot, 'Data', 'blueprints.json')
 const exportsRootPath = path.join(publicRoot, 'Exports')
 const exportsContentPath = path.join(exportsRootPath, 'Icarus', 'Content')
 const localizationRootPath = path.join(exportsContentPath, 'Localization', 'Game')
@@ -76,8 +77,12 @@ function isCriticalAssetPath(unrealPath) {
 async function main() {
   const failures = []
 
-  if (!(await pathExists(dataFilePath))) {
-    failures.push(`Missing canonical data file: ${dataFilePath}`)
+  if (!(await pathExists(talentsDataFilePath))) {
+    failures.push(`Missing canonical data file: ${talentsDataFilePath}`)
+  }
+
+  if (!(await pathExists(blueprintsDataFilePath))) {
+    failures.push(`Missing blueprint data file: ${blueprintsDataFilePath}`)
   }
 
   if (!(await pathExists(exportsRootPath))) {
@@ -96,18 +101,34 @@ async function main() {
     return
   }
 
-  const dataRaw = await fs.readFile(dataFilePath, 'utf8')
-  let dataJson = null
+  const talentsDataRaw = await fs.readFile(talentsDataFilePath, 'utf8')
+  let talentsDataJson = null
   try {
-    dataJson = JSON.parse(dataRaw)
+    talentsDataJson = JSON.parse(talentsDataRaw)
   } catch {
-    console.error(`Path preflight failed. Invalid JSON: ${dataFilePath}`)
+    console.error(`Path preflight failed. Invalid JSON: ${talentsDataFilePath}`)
     process.exitCode = 1
     return
   }
 
-  if (!dataJson?.models || !dataJson?.ranks || !dataJson?.generatedAt || !dataJson?.projectVersion) {
+  if (!talentsDataJson?.models || !talentsDataJson?.ranks || !talentsDataJson?.generatedAt || !talentsDataJson?.projectVersion) {
     console.error('Path preflight failed. talents.json is missing required top-level keys: generatedAt/projectVersion/models/ranks.')
+    process.exitCode = 1
+    return
+  }
+
+  const blueprintsDataRaw = await fs.readFile(blueprintsDataFilePath, 'utf8')
+  let blueprintsDataJson = null
+  try {
+    blueprintsDataJson = JSON.parse(blueprintsDataRaw)
+  } catch {
+    console.error(`Path preflight failed. Invalid JSON: ${blueprintsDataFilePath}`)
+    process.exitCode = 1
+    return
+  }
+
+  if (!blueprintsDataJson?.models || !blueprintsDataJson?.ranks || !blueprintsDataJson?.generatedAt || !blueprintsDataJson?.projectVersion) {
+    console.error('Path preflight failed. blueprints.json is missing required top-level keys: generatedAt/projectVersion/models/ranks.')
     process.exitCode = 1
     return
   }
@@ -143,7 +164,10 @@ async function main() {
     return
   }
 
-  const referencedAssets = collectRuntimeAssetPaths(dataJson)
+  const referencedAssets = [
+    ...collectRuntimeAssetPaths(talentsDataJson),
+    ...collectRuntimeAssetPaths(blueprintsDataJson)
+  ]
   const uniqueAssets = Array.from(new Set(referencedAssets)).map((unrealPath) => ({
     unrealPath,
     absolutePath: unrealToPngAbsolutePath(unrealPath),
@@ -166,7 +190,7 @@ async function main() {
   }
 
   if (missingCriticalAssets.length > 0) {
-    console.error('Path preflight failed. Missing critical talent assets referenced by talents.json:')
+    console.error('Path preflight failed. Missing critical assets referenced by talents.json/blueprints.json:')
     missingCriticalAssets.slice(0, 25).forEach((missingPath) => console.error(`- ${missingPath}`))
     if (missingCriticalAssets.length > 25) {
       console.error(`... and ${missingCriticalAssets.length - 25} more`)
