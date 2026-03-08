@@ -9,6 +9,7 @@ const scaleValue = (value) => value * NODE_SCALE
 
 function TalentTreeCanvas({ tree, ranks, modelId, localeStrings, skillInvestments, skilledTalents, onSkillTalent, treePoints }) {
   const [hoveredTalentId, setHoveredTalentId] = useState(null)
+  const [hoveredBadgeId, setHoveredBadgeId] = useState(null)
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 })
   const showRankProgressBars = modelId !== 'Creature'
   const talentMap = useMemo(() => tree?.talents ?? {}, [tree?.talents])
@@ -333,6 +334,58 @@ function TalentTreeCanvas({ tree, ranks, modelId, localeStrings, skillInvestment
           const featureLevelIconSrc = isBlueprintNode ? resolveAssetImagePath(talent.featureLevelIcon) : null
           const dlcIconSrc = dlcFlag?.dlcIcon ? resolveAssetImagePath(dlcFlag.dlcIcon) : null
 
+          // Badge tooltip labels – use game localization templates where available
+          const requiresTemplate = localeStrings?.['ST_UMG:Requires'] || localeStrings?.['Requires'] || 'Requires [{0}]'
+          const requiresDlcTemplate = localeStrings?.['ST_Quests:RequiresDLC'] || localeStrings?.['RequiresDLC'] || 'Requires [{0}] DLC'
+          const requiresTalentLabel = localeStrings?.['ST_UMG:RequiresTalentHover'] || localeStrings?.['RequiresTalentHover'] || 'Requires Talent'
+
+          const dlcBadgeLabel = dlcFlag
+            ? requiresDlcTemplate.replace(
+                /\[\{0\}]/g,
+                localeStrings?.[`${dlcFlag.RowName}-DLCName`]
+                  || localeStrings?.[`D_DLCPackageData:${dlcFlag.RowName}-DLCName`]
+                  || prettifyId(dlcFlag.RowName)
+              )
+            : null
+          const missionFlags = requiredFlags.filter((f) =>
+            f?.DataTableName === 'D_AccountFlags' || f?.DataTableName === 'D_CharacterFlags'
+          )
+          const missionBadgeLabels = missionFlags.map((f) => {
+            if (f.DataTableName === 'D_CharacterFlags') {
+              if (f.grantedBy) {
+                const tName = resolveI18nText(f.grantedBy.display, localeStrings, null) || prettifyId(f.grantedBy.talentId)
+                return requiresTemplate.replace(/\[\{0\}]/g, prettifyId(tName))
+              }
+              const desc = localeStrings?.[`${f.RowName}-Description`]
+                || localeStrings?.[`D_CharacterFlags:${f.RowName}-Description`]
+                || null
+              return desc
+                ? requiresTemplate.replace(/\[\{0\}]/g, desc)
+                : requiresTemplate.replace(/\[\{0\}]/g, prettifyId(f.RowName))
+            }
+            if (f.DataTableName === 'D_AccountFlags') {
+              const missions = Array.isArray(f.missions) ? f.missions : []
+              if (missions.length > 0) {
+                const texts = missions.map((mId) => {
+                  const dropName = localeStrings?.[`${mId}-DropName`]
+                    || localeStrings?.[`D_ProspectList:${mId}-DropName`]
+                    || null
+                  const desc = localeStrings?.[`${mId}-Description`]
+                    || localeStrings?.[`D_ProspectList:${mId}-Description`]
+                    || null
+                  if (dropName && desc) return `${dropName} \u2014 ${desc}`
+                  if (dropName) return dropName
+                  if (desc) return desc
+                  return prettifyId(mId)
+                })
+                return requiresTemplate.replace(/\[\{0\}]/g, texts.join(', '))
+              }
+              const clean = f.RowName.replace(/^GrantedBlueprint_/, '').replace(/^GrantedTalent_/, '')
+              return requiresTemplate.replace(/\[\{0\}]/g, prettifyId(clean))
+            }
+            return prettifyId(f.RowName)
+          }).filter(Boolean)
+
           return (
             <div
               key={talent.id}
@@ -419,18 +472,36 @@ function TalentTreeCanvas({ tree, ranks, modelId, localeStrings, skillInvestment
 
               {/* DLC requirement badge (bottom-left) */}
               {isBlueprintNode && hasDlcRequirement && dlcIconSrc && (
-                <div className="dlc-node-badge">
+                <div
+                  className="dlc-node-badge"
+                  onMouseEnter={(e) => { e.stopPropagation(); setHoveredBadgeId(`dlc-${talent.id}`) }}
+                  onMouseLeave={() => setHoveredBadgeId(null)}
+                >
                   <img src={dlcIconSrc} alt="DLC" className="dlc-node-badge-icon" />
+                  {hoveredBadgeId === `dlc-${talent.id}` && dlcBadgeLabel && (
+                    <div className="badge-tooltip">{dlcBadgeLabel}</div>
+                  )}
                 </div>
               )}
 
               {/* Mission / operation requirement badge (bottom-left, offset if DLC badge present) */}
               {isBlueprintNode && hasMissionRequirement && (
-                <img
-                  src={resolveAppUrl('Exports/Icarus/Content/Assets/2DArt/UI/Icons/T_Icon_Star.png')}
-                  alt="★"
+                <div
                   className={`mission-node-badge ${hasDlcRequirement ? 'with-dlc' : ''}`}
-                />
+                  onMouseEnter={(e) => { e.stopPropagation(); setHoveredBadgeId(`mission-${talent.id}`) }}
+                  onMouseLeave={() => setHoveredBadgeId(null)}
+                >
+                  <img
+                    src={resolveAppUrl('Exports/Icarus/Content/Assets/2DArt/UI/Icons/T_Icon_Star.png')}
+                    alt="★"
+                    className="mission-node-badge-icon"
+                  />
+                  {hoveredBadgeId === `mission-${talent.id}` && missionBadgeLabels.length > 0 && (
+                    <div className="badge-tooltip">
+                      {missionBadgeLabels.map((label, i) => <div key={i}>{label}</div>)}
+                    </div>
+                  )}
+                </div>
               )}
 
               {/* Blueprint name label below the node */}
@@ -441,8 +512,8 @@ function TalentTreeCanvas({ tree, ranks, modelId, localeStrings, skillInvestment
                 </div>
               )}
 
-              {/* Tooltip */}
-              {isHovered && (
+              {/* Tooltip (suppressed when a badge tooltip is active) */}
+              {isHovered && !hoveredBadgeId && (
                 <TalentTooltip
                   talent={talent}
                   currentRank={currentRank}
@@ -451,7 +522,6 @@ function TalentTreeCanvas({ tree, ranks, modelId, localeStrings, skillInvestment
                   mousePos={mousePos}
                   talentMap={visibleTalentMap}
                   modelId={modelId}
-                  effectiveRequiredTalentIds={effectiveRequiredTalentIdsById[talent.id] ?? []}
                 />
               )}
             </div>
@@ -506,7 +576,7 @@ function buildEdgePathWithWaypoints({ fromCenter, toCenter, waypoints, segmentMe
     .join(' ')
 }
 
-function TalentTooltip({ talent, currentRank, localeStrings, skilledTalents, mousePos, talentMap, modelId, effectiveRequiredTalentIds }) {
+function TalentTooltip({ talent, currentRank, localeStrings, skilledTalents, mousePos, talentMap, modelId }) {
   const tooltipRef = useRef(null)
   const isBlueprint = modelId === 'Blueprint'
   const title = resolveI18nText(talent.display, localeStrings, talent.id)
@@ -636,14 +706,6 @@ function TalentTooltip({ talent, currentRank, localeStrings, skilledTalents, mou
           </div>
         )}
 
-        {/* Other prerequisites: feature level, DLC, flags */}
-        <BlueprintPrerequisites
-          talent={talent}
-          localeStrings={localeStrings}
-          talentMap={talentMap}
-          skilledTalents={skilledTalents}
-          effectiveRequiredTalentIds={effectiveRequiredTalentIds}
-        />
       </div>
     )
   }
@@ -840,22 +902,6 @@ function TalentTooltip({ talent, currentRank, localeStrings, skilledTalents, mou
         </div>
       )}
 
-      {effectiveRequiredTalentIds?.length > 0 && (
-        <div className="tooltip-prerequisites">
-          <div className="label">Prerequisites (any one):</div>
-          {effectiveRequiredTalentIds.map((reqId) => {
-            const reqTalent = talentMap[reqId]
-            const reqName = resolveI18nText(reqTalent?.display, localeStrings, reqId)
-            const isMet = (skilledTalents?.[reqId] ?? 0) > 0
-            return (
-              <div key={reqId} className={`prerequisite ${isMet ? 'met' : 'unmet'}`}>
-                {reqName}
-              </div>
-            )
-          })}
-        </div>
-      )}
-
       {rewardRows.length ? (
         <div className="tooltip-rewards">
           {rewardRows.map(({ rankNum, isCurrentRank, effectValues }, index) => {
@@ -953,104 +999,6 @@ function localizeStatName(rawKey, localeStrings) {
   // Fallback: strip Value wrapper, Base prefix, trailing _%, etc.
   const fallback = statId.replace(/[_]?[+-]?%?$/, '').replace(/^Base/, '')
   return { name: prettifyId(fallback), isPercent }
-}
-
-function BlueprintPrerequisites({ talent, localeStrings, talentMap, skilledTalents, effectiveRequiredTalentIds }) {
-  const requiredFlags = Array.isArray(talent.requiredFlags) ? talent.requiredFlags : []
-  const featureLevel = talent.requiredFeatureLevel
-
-  const flagEntries = requiredFlags
-    .filter((f) => f?.RowName && f.RowName !== 'None')
-    .map((f) => {
-      const table = f.DataTableName || ''
-      const rowName = f.RowName
-      if (table === 'D_DLCPackageData') {
-        const dlcName = localeStrings?.[`${rowName}-DLCName`]
-          || localeStrings?.[`D_DLCPackageData:${rowName}-DLCName`]
-          || prettifyId(rowName)
-        return { key: `dlc-${rowName}`, label: `Requires DLC: ${dlcName}`, type: 'dlc' }
-      }
-      if (table === 'D_CharacterFlags') {
-        // Enriched: show which talent grants this flag
-        if (f.grantedBy) {
-          const talentName = resolveI18nText(f.grantedBy.display, localeStrings, null)
-            || prettifyId(f.grantedBy.talentId)
-          return { key: `flag-${rowName}`, label: `Requires Talent: ${prettifyId(talentName)}`, type: 'talent-flag' }
-        }
-        const desc = localeStrings?.[`${rowName}-Description`]
-          || localeStrings?.[`D_CharacterFlags:${rowName}-Description`]
-          || null
-        return { key: `flag-${rowName}`, label: desc || `Mission: ${prettifyId(rowName)}`, type: 'mission' }
-      }
-      if (table === 'D_AccountFlags') {
-        // Enriched: show the mission(s) that reward this flag
-        const missions = Array.isArray(f.missions) ? f.missions : []
-        if (missions.length > 0) {
-          const missionLabels = missions.map((mId) => {
-            const dropName = localeStrings?.[`${mId}-DropName`]
-              || localeStrings?.[`D_ProspectList:${mId}-DropName`]
-              || null
-            const desc = localeStrings?.[`${mId}-Description`]
-              || localeStrings?.[`D_ProspectList:${mId}-Description`]
-              || null
-            if (dropName && desc) return `${dropName} — ${desc}`
-            if (dropName) return dropName
-            if (desc) return desc
-            return prettifyId(mId)
-          })
-          return { key: `acct-${rowName}`, label: `Mission: ${missionLabels.join(', ')}`, type: 'account' }
-        }
-        const clean = rowName.replace(/^GrantedBlueprint_/, '').replace(/^GrantedTalent_/, '')
-        return { key: `acct-${rowName}`, label: `Unlocked: ${prettifyId(clean)}`, type: 'account' }
-      }
-      return { key: `flag-${rowName}`, label: prettifyId(rowName), type: 'unknown' }
-    })
-
-  let featureEntry = null
-  if (featureLevel) {
-    const dlcName = localeStrings?.[`${featureLevel}-DLCName`]
-      || localeStrings?.[`D_DLCPackageData:${featureLevel}-DLCName`]
-      || null
-    // Try underscore-separated variant (DangerousHorizons → Dangerous_Horizons)
-    const underscored = featureLevel.replace(/([a-z])([A-Z])/g, '$1_$2')
-    const dlcNameAlt = !dlcName
-      ? (localeStrings?.[`${underscored}-DLCName`]
-        || localeStrings?.[`D_DLCPackageData:${underscored}-DLCName`]
-        || null)
-      : null
-    const displayName = dlcName || dlcNameAlt || prettifyId(featureLevel)
-    featureEntry = { key: `feat-${featureLevel}`, label: `Added in: ${displayName}`, type: 'expansion' }
-  }
-
-  const hasPrereqs = effectiveRequiredTalentIds?.length > 0 || flagEntries.length > 0 || featureEntry
-  if (!hasPrereqs) return null
-
-  return (
-    <div className="tooltip-prerequisites">
-      {featureEntry && (
-        <div className="prerequisite expansion">{featureEntry.label}</div>
-      )}
-      {flagEntries.map((entry) => (
-        <div key={entry.key} className={`prerequisite ${entry.type}`}>{entry.label}</div>
-      ))}
-      {effectiveRequiredTalentIds?.length > 0 && (
-        <>
-          <div className="label">Prerequisites (any one):</div>
-          {effectiveRequiredTalentIds.map((reqId) => {
-            const reqTalent = talentMap[reqId]
-            const reqName = resolveI18nText(reqTalent?.itemDetails?.display, localeStrings, null)
-              || resolveI18nText(reqTalent?.display, localeStrings, reqId)
-            const isMet = (skilledTalents?.[reqId] ?? 0) > 0
-            return (
-              <div key={reqId} className={`prerequisite ${isMet ? 'met' : 'unmet'}`}>
-                {prettifyId(reqName)}
-              </div>
-            )
-          })}
-        </>
-      )}
-    </div>
-  )
 }
 
 function formatList(values) {
