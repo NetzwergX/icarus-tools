@@ -5,10 +5,12 @@
   border: 1px solid #4a3b1f;
   border-radius: 8px;
   margin-bottom: 2rem;
+  padding: 1rem;
   padding-top: 6.5rem;
-  padding-left: 1rem;
-  padding-right: 1rem;
-  padding-bottom: 1rem;
+}
+
+.talent-tree-canvas-container.no-header {
+  padding-top: 1rem;
 }
 
 /* Tree mastery progress section */
@@ -91,9 +93,7 @@
 
 /* SVG for edges */
 .talent-tree-edges {
-  position: absolute;
-  top: 5.4rem;
-  left: 1rem;
+  display: block;
   pointer-events: none;
 }
 

@@ -175,7 +175,7 @@ function TalentTreeCanvas({ tree, ranks, modelId, localeStrings, skillInvestment
   })
 
   return (
-    <div className="talent-tree-canvas-container">
+    <div className={`talent-tree-canvas-container ${showTreeHeader ? '' : 'no-header'}`.trim()}>
       {/* Tree mastery progress – hidden for blueprints (no ranks) */}
       {showTreeHeader && (
         <div className="tree-progress-section">
@@ -235,12 +235,13 @@ function TalentTreeCanvas({ tree, ranks, modelId, localeStrings, skillInvestment
         </div>
       )}
 
-      {/* SVG Canvas for edges only */}
-      <svg
-        className="talent-tree-edges"
-        width={bounds.width}
-        height={bounds.height}
-      >
+      {/* SVG + HTML nodes share the same wrapper so edges and nodes align */}
+      <div className="talent-tree-layer" style={{ width: bounds.width, height: bounds.height, position: 'relative' }}>
+        <svg
+          className="talent-tree-edges"
+          width={bounds.width}
+          height={bounds.height}
+        >
         <g className="edges">
           {talents.map((talent) => {
             const fromPos = worldToContainer(
@@ -307,10 +308,10 @@ function TalentTreeCanvas({ tree, ranks, modelId, localeStrings, skillInvestment
             })
           })}
         </g>
-      </svg>
+        </svg>
 
-      {/* HTML Talent nodes */}
-      <div className="talent-nodes-container" style={{ width: bounds.width, height: bounds.height, position: 'relative' }}>
+        {/* HTML Talent nodes */}
+        <div className="talent-nodes-container" style={{ width: bounds.width, height: bounds.height, position: 'absolute', top: 0, left: 0 }}>
         {talents.map((talent) => {
           const pos = worldToContainer(talent.position?.x ?? 0, talent.position?.y ?? 0)
           const w = scaleValue(talent.size?.x ?? 128)
@@ -532,6 +533,7 @@ function TalentTreeCanvas({ tree, ranks, modelId, localeStrings, skillInvestment
             </div>
           )
         })}
+        </div>
       </div>
     </div>
   )
