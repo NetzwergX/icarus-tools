@@ -161,6 +161,9 @@ function TalentTreeCanvas({ tree, ranks, modelId, localeStrings, skillInvestment
     const talent = visibleTalentMap[talentId]
     if (!talent) return
 
+    // Player_Crafting in blueprints is always skilled and cannot be removed
+    if (isBlueprint && talentId === 'Player_Crafting') return
+
     const currentRank = skilledTalents[talentId] ?? 0
 
     if (currentRank <= 0) return // Already at 0
@@ -318,20 +321,33 @@ function TalentTreeCanvas({ tree, ranks, modelId, localeStrings, skillInvestment
           const progressPercent = (currentRank / maxRanks) * 100
           const isBlueprintNode = isBlueprint
 
+          // Get Master rank icon for talent requirement badges
+          const masterRankIconSrc = resolveAssetImagePath(ranks?.Master?.icon)
+
           // Determine prerequisite badge flags for blueprint nodes
           const requiredFlags = Array.isArray(talent.requiredFlags) ? talent.requiredFlags : []
           const dlcFlag = requiredFlags.find((f) => f?.DataTableName === 'D_DLCPackageData')
           const hasDlcRequirement = !!dlcFlag
-          const hasMissionRequirement = requiredFlags.some((f) =>
-            f?.DataTableName === 'D_AccountFlags' || f?.DataTableName === 'D_CharacterFlags'
+          const missionFlags = requiredFlags.filter((f) =>
+            f?.DataTableName === 'D_AccountFlags'
           )
+          const hasMissionRequirement = missionFlags.length > 0
+          const talentGrantFlags = requiredFlags.filter((f) =>
+            f?.DataTableName === 'D_CharacterFlags' && f?.grantedBy
+          )
+          const hasTalentGrantRequirement = talentGrantFlags.length > 0
           const featureLevelIconSrc = isBlueprintNode ? resolveAssetImagePath(talent.featureLevelIcon) : null
           const dlcIconSrc = dlcFlag?.dlcIcon ? resolveAssetImagePath(dlcFlag.dlcIcon) : null
+
+          // Count unlocked items/recipes (for bottom-right badge)
+          const unlockedCount = isBlueprintNode && Array.isArray(talent.itemDetails?.recipes)
+            ? talent.itemDetails.recipes.length
+            : 0
 
           // Badge tooltip labels – use game localization templates where available
           const requiresTemplate = localeStrings?.['ST_UMG:Requires'] || localeStrings?.['Requires'] || 'Requires [{0}]'
           const requiresDlcTemplate = localeStrings?.['ST_Quests:RequiresDLC'] || localeStrings?.['RequiresDLC'] || 'Requires [{0}] DLC'
-          const requiresTalentLabel = localeStrings?.['ST_UMG:RequiresTalentHover'] || localeStrings?.['RequiresTalentHover'] || 'Requires Talent'
+          const grantedByTalentLabel = localeStrings?.['GrantedByTalent'] || 'Granted by Talent'
 
           const dlcBadgeLabel = dlcFlag
             ? requiresDlcTemplate.replace(
@@ -341,43 +357,33 @@ function TalentTreeCanvas({ tree, ranks, modelId, localeStrings, skillInvestment
                   || prettifyId(dlcFlag.RowName)
               )
             : null
-          const missionFlags = requiredFlags.filter((f) =>
-            f?.DataTableName === 'D_AccountFlags' || f?.DataTableName === 'D_CharacterFlags'
-          )
+
+          // Mission badge labels
           const missionBadgeLabels = missionFlags.map((f) => {
-            if (f.DataTableName === 'D_CharacterFlags') {
-              if (f.grantedBy) {
-                const tName = resolveLocalizedValue(f.grantedBy.display, localeStrings, null) || prettifyId(f.grantedBy.talentId)
-                return requiresTemplate.replace(/\[\{0\}]/g, prettifyId(tName))
-              }
-              const desc = localeStrings?.[`${f.RowName}-Description`]
-                || localeStrings?.[`D_CharacterFlags:${f.RowName}-Description`]
-                || null
-              return desc
-                ? requiresTemplate.replace(/\[\{0\}]/g, desc)
-                : requiresTemplate.replace(/\[\{0\}]/g, prettifyId(f.RowName))
+            const missions = Array.isArray(f.missions) ? f.missions : []
+            if (missions.length > 0) {
+              const texts = missions.map((mId) => {
+                const dropName = localeStrings?.[`${mId}-DropName`]
+                  || localeStrings?.[`D_ProspectList:${mId}-DropName`]
+                  || null
+                const desc = localeStrings?.[`${mId}-Description`]
+                  || localeStrings?.[`D_ProspectList:${mId}-Description`]
+                  || null
+                if (dropName && desc) return `${dropName} \u2014 ${desc}`
+                if (dropName) return dropName
+                if (desc) return desc
+                return prettifyId(mId)
+              })
+              return requiresTemplate.replace(/\[\{0\}]/g, texts.join(', '))
             }
-            if (f.DataTableName === 'D_AccountFlags') {
-              const missions = Array.isArray(f.missions) ? f.missions : []
-              if (missions.length > 0) {
-                const texts = missions.map((mId) => {
-                  const dropName = localeStrings?.[`${mId}-DropName`]
-                    || localeStrings?.[`D_ProspectList:${mId}-DropName`]
-                    || null
-                  const desc = localeStrings?.[`${mId}-Description`]
-                    || localeStrings?.[`D_ProspectList:${mId}-Description`]
-                    || null
-                  if (dropName && desc) return `${dropName} \u2014 ${desc}`
-                  if (dropName) return dropName
-                  if (desc) return desc
-                  return prettifyId(mId)
-                })
-                return requiresTemplate.replace(/\[\{0\}]/g, texts.join(', '))
-              }
-              const clean = f.RowName.replace(/^GrantedBlueprint_/, '').replace(/^GrantedTalent_/, '')
-              return requiresTemplate.replace(/\[\{0\}]/g, prettifyId(clean))
-            }
-            return prettifyId(f.RowName)
+            const clean = f.RowName.replace(/^GrantedBlueprint_/, '').replace(/^GrantedTalent_/, '')
+            return requiresTemplate.replace(/\[\{0\}]/g, prettifyId(clean))
+          }).filter(Boolean)
+
+          // Talent grant badge labels
+          const talentGrantBadgeLabels = talentGrantFlags.map((f) => {
+            const tName = resolveLocalizedValue(f.grantedBy.display, localeStrings, null) || prettifyId(f.grantedBy.talentId)
+            return `${grantedByTalentLabel}: ${prettifyId(tName)}`
           }).filter(Boolean)
 
           return (
@@ -478,10 +484,10 @@ function TalentTreeCanvas({ tree, ranks, modelId, localeStrings, skillInvestment
                 </div>
               )}
 
-              {/* Mission / operation requirement badge (bottom-left, offset if DLC badge present) */}
+              {/* Mission requirement badge (bottom-left) */}
               {isBlueprintNode && hasMissionRequirement && (
                 <div
-                  className={`mission-node-badge ${hasDlcRequirement ? 'with-dlc' : ''}`}
+                  className={`mission-node-badge ${hasDlcRequirement || hasTalentGrantRequirement ? 'with-dlc' : ''} ${hasTalentGrantRequirement ? 'with-talent-grant' : ''}`}
                   onMouseEnter={(e) => { e.stopPropagation(); setHoveredBadgeId(`mission-${talent.id}`) }}
                   onMouseLeave={() => setHoveredBadgeId(null)}
                 >
@@ -495,6 +501,33 @@ function TalentTreeCanvas({ tree, ranks, modelId, localeStrings, skillInvestment
                       {missionBadgeLabels.map((label, i) => <div key={i}>{label}</div>)}
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* Talent grant requirement badge (bottom-left, offset if DLC badge present) */}
+              {isBlueprintNode && hasTalentGrantRequirement && masterRankIconSrc && (
+                <div
+                  className={`talent-grant-node-badge ${hasDlcRequirement ? 'with-dlc' : ''}`}
+                  onMouseEnter={(e) => { e.stopPropagation(); setHoveredBadgeId(`talent-grant-${talent.id}`) }}
+                  onMouseLeave={() => setHoveredBadgeId(null)}
+                >
+                  <img
+                    src={masterRankIconSrc}
+                    alt="◆"
+                    className="talent-grant-node-badge-icon"
+                  />
+                  {hoveredBadgeId === `talent-grant-${talent.id}` && talentGrantBadgeLabels.length > 0 && (
+                    <div className="badge-tooltip">
+                      {talentGrantBadgeLabels.map((label, i) => <div key={i}>{label}</div>)}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Unlock count badge (bottom-right) – shows how many items/blueprints are unlocked */}
+              {isBlueprintNode && unlockedCount > 1 && (
+                <div className="unlock-count-badge" title={`Unlocks ${unlockedCount} items`}>
+                  {unlockedCount}
                 </div>
               )}
 

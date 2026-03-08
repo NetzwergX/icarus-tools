@@ -976,7 +976,7 @@ function createBlueprintEnrichmentResolver({
   const recipesByRequirement = indexRecipesByRequirement(recipesData);
 
   function resolveRecipes(talentId) {
-    const recipeRows = recipesByRequirement[talentId] ?? [];
+    const recipeRows = recipesByRequirement[talentId.toLowerCase()] ?? [];
     return recipeRows.map((recipe) => {
       const craftedAt = (recipe.RecipeSets ?? [])
         .map((ref) => {
@@ -1133,8 +1133,10 @@ function indexRecipesByRequirement(recipesData) {
     if (row?.bForceDisableRecipe) return;
     const reqId = row?.Requirement?.RowName;
     if (!reqId || reqId === "None") return;
-    if (!byRequirement[reqId]) byRequirement[reqId] = [];
-    byRequirement[reqId].push(row);
+    // Use lowercase key for case-insensitive lookup
+    const key = reqId.toLowerCase();
+    if (!byRequirement[key]) byRequirement[key] = [];
+    byRequirement[key].push(row);
   });
 
   return byRequirement;

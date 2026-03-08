@@ -202,17 +202,31 @@ function App() {
           sharedBuild.playerModifierIds,
           data.playerTalentModifiers
         )
+        
+        // Ensure Player_Crafting is always skilled in Blueprint_T1_Player for shared blueprint builds
+        let skilledTalents = sharedBuild.skilledTalents
+        if (sharedBuild.modelId === BLUEPRINT_MODEL_ID) {
+          skilledTalents = { ...sharedBuild.skilledTalents }
+          if (!skilledTalents['Blueprint_T1_Player']) {
+            skilledTalents['Blueprint_T1_Player'] = {}
+          }
+          skilledTalents['Blueprint_T1_Player'] = {
+            ...skilledTalents['Blueprint_T1_Player'],
+            'Player_Crafting': 1
+          }
+        }
+        
         const hasOvercap = sharedBuild.modelId === 'Creature'
-          ? hasCreatureOvercap(sharedBuild.skilledTalents, nextModel)
+          ? hasCreatureOvercap(skilledTalents, nextModel)
           : (sharedBuild.modelId === 'Player' && hasPlayerOvercap(
-            sharedBuild.skilledTalents,
+            skilledTalents,
             nextModel,
             getMaxPlayerTalentPoints(nextPlayerModifierIds, data.playerTalentModifiers)
           ))
 
         setModelId(sharedBuild.modelId)
         setArchetypeId(sharedBuild.archetypeId)
-        setSkilledTalents(sharedBuild.skilledTalents)
+        setSkilledTalents(skilledTalents)
         setSelectedPlayerModifierIds(nextPlayerModifierIds)
         setDecodeBuildError((previousErrorCode) => (
           previousErrorCode || (hasOvercap ? 'overcap' : '')
@@ -238,6 +252,14 @@ function App() {
         blueprintModel,
         resolvedArchetypeId
       )
+
+      // Ensure Player_Crafting is always skilled in Blueprint_T1_Player
+      if (resolvedArchetypeId === 'Player') {
+        if (!blueprintDraft['Blueprint_T1_Player']) {
+          blueprintDraft['Blueprint_T1_Player'] = {}
+        }
+        blueprintDraft['Blueprint_T1_Player']['Player_Crafting'] = 1
+      }
 
       setBuildWarnings([])
       setPendingSharedMetadata(getActiveBuildMetadata(activeBuilds, BLUEPRINT_MODEL_ID, resolvedArchetypeId))
@@ -509,8 +531,19 @@ function App() {
 
   const getIsSoloTree = (treeId) => treeArchetypeMap[treeId] === 'Solo'
 
+  // Build exclusions: exclude origin talent for Creatures, Player_Crafting for Blueprint_T1_Player
+  const getExcludedTalentByTree = () => {
+    if (modelId === 'Creature') {
+      return creatureOriginTalentByTree
+    }
+    if (modelId === 'Blueprint') {
+      return { 'Blueprint_T1_Player': 'Player_Crafting' }
+    }
+    return null
+  }
+
   const pointsSummary = useMemo(
-    () => summarizeTalentPoints(skilledTalents, treeArchetypeMap, modelId === 'Creature' ? creatureOriginTalentByTree : null),
+    () => summarizeTalentPoints(skilledTalents, treeArchetypeMap, getExcludedTalentByTree()),
     [creatureOriginTalentByTree, modelId, skilledTalents, treeArchetypeMap]
   )
   const normalizedSelectedPlayerModifierIds = useMemo(
@@ -870,6 +903,11 @@ function App() {
     setSkilledTalents((prev) => {
       const previousRank = prev?.[treeId]?.[talentId] ?? 0
       if (newRank === previousRank) return prev
+
+      // Player_Crafting in blueprints is always skilled and cannot be removed
+      if (modelId === 'Blueprint' && talentId === 'Player_Crafting' && newRank < 1) {
+        return prev
+      }
 
       if (modelId === 'Creature') {
         const originTalentId = creatureOriginTalentByTree[treeId]
@@ -1344,6 +1382,14 @@ function App() {
         blueprintModel,
         nextArchetypeId
       )
+
+      // Ensure Player_Crafting is always skilled in Blueprint_T1_Player
+      if (nextArchetypeId === 'Player') {
+        if (!normalizedSkilledTalents['Blueprint_T1_Player']) {
+          normalizedSkilledTalents['Blueprint_T1_Player'] = {}
+        }
+        normalizedSkilledTalents['Blueprint_T1_Player']['Player_Crafting'] = 1
+      }
 
       setArchetypeId(nextArchetypeId)
       setSkilledTalents(normalizedSkilledTalents)
