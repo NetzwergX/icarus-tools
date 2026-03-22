@@ -1,5 +1,11 @@
+# Node
 node_modules/*
 */node_modules/*
 
+# C#
+**/bin/*
+**/obj/*
+
 # FMODEL Expoorted Files from ICARUS
 Exports/
+*.log
